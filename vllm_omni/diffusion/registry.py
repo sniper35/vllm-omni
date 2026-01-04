@@ -74,6 +74,11 @@ _DIFFUSION_MODELS = {
         "pipeline_sd3",
         "StableDiffusion3Pipeline",
     ),
+    "NextStep11Pipeline": (
+        "nextstep_1_1",
+        "pipeline_nextstep_1_1",
+        "NextStep11Pipeline",
+    ),
 }
 
 
@@ -120,6 +125,7 @@ _DIFFUSION_POST_PROCESS_FUNCS = {
     "BagelPipeline": "get_bagel_post_process_func",
     "LongCatImageEditPipeline": "get_longcat_image_post_process_func",
     "StableDiffusion3Pipeline": "get_sd3_image_post_process_func",
+    "NextStep11Pipeline": "get_nextstep11_post_process_func",
 }
 
 _DIFFUSION_PRE_PROCESS_FUNCS = {
