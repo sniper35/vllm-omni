@@ -25,9 +25,7 @@ from vllm_omni.utils.platform_utils import detect_device_type
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Generate an image with NextStep-1.1."
-    )
+    parser = argparse.ArgumentParser(description="Generate an image with NextStep-1.1.")
     parser.add_argument(
         "--model",
         default="stepfun-ai/NextStep-1.1",
@@ -45,9 +43,7 @@ def parse_args() -> argparse.Namespace:
         "normal quality, jpeg artifacts, signature, watermark, username, blurry.",
         help="Negative prompt for classifier-free guidance.",
     )
-    parser.add_argument(
-        "--seed", type=int, default=3407, help="Random seed for deterministic results."
-    )
+    parser.add_argument("--seed", type=int, default=3407, help="Random seed for deterministic results.")
     parser.add_argument(
         "--guidance_scale",
         type=float,
@@ -60,12 +56,8 @@ def parse_args() -> argparse.Namespace:
         default=1.0,
         help="Image-level classifier-free guidance scale.",
     )
-    parser.add_argument(
-        "--height", type=int, default=512, help="Height of generated image."
-    )
-    parser.add_argument(
-        "--width", type=int, default=512, help="Width of generated image."
-    )
+    parser.add_argument("--height", type=int, default=512, help="Height of generated image.")
+    parser.add_argument("--width", type=int, default=512, help="Width of generated image.")
     parser.add_argument(
         "--output",
         type=str,
@@ -101,6 +93,12 @@ def parse_args() -> argparse.Namespace:
         "--use_norm",
         action="store_true",
         help="Apply layer normalization to sampled tokens.",
+    )
+    parser.add_argument(
+        "--py-generator",
+        action="store_true",
+        default=False,
+        help="Use py_generator mode. The returned type of Omni.generate() is a Python Generator object.",
     )
     return parser.parse_args()
 
@@ -146,6 +144,7 @@ def main():
         num_inference_steps=args.num_inference_steps,
         num_outputs_per_prompt=args.num_images_per_prompt,
         seed=args.seed,
+        py_generator=args.py_generator,
         extra={
             "cfg_img": args.cfg_img,
             "timesteps_shift": args.timesteps_shift,
@@ -158,13 +157,11 @@ def main():
     generation_time = generation_end - generation_start
 
     # Print profiling results
-    print(
-        f"Total generation time: {generation_time:.4f} seconds "
-        f"({generation_time * 1000:.2f} ms)"
-    )
+    print(f"Total generation time: {generation_time:.4f} seconds ({generation_time * 1000:.2f} ms)")
 
-    # Extract images from OmniRequestOutput
-    outputs = list(outputs)
+    # When py_generator=True, outputs is a generator; otherwise it's already a list
+    if args.py_generator:
+        outputs = list(outputs)
     if not outputs:
         raise ValueError("No output generated from omni.generate()")
 
