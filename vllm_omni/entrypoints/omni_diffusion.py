@@ -76,13 +76,12 @@ class OmniDiffusion:
 
             model_type = cfg.get("model_type")
             architectures = cfg.get("architectures") or []
+            # Bagle/NextStep models don't have a model_index.json, so we need to set the pipeline class name manually
             if model_type == "bagel" or "BagelForConditionalGeneration" in architectures:
                 od_config.model_class_name = "BagelPipeline"
                 od_config.tf_model_config = TransformerConfig()
                 od_config.update_multimodal_support()
             elif model_type == "nextstep":
-                # NextStep models use trust_remote_code and are loaded via AutoModel
-                # The model_class_name should already be set from the caller
                 if od_config.model_class_name is None:
                     od_config.model_class_name = "NextStep11Pipeline"
                 od_config.tf_model_config = TransformerConfig()
