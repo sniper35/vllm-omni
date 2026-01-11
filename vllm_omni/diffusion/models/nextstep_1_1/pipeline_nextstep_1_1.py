@@ -2,7 +2,6 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 # Adapted from NextStep-1.1 (https://huggingface.co/stepfun-ai/NextStep-1.1)
 
-import json
 import os
 import re
 import sys
@@ -17,23 +16,20 @@ from diffusers.image_processor import VaeImageProcessor
 from PIL import Image
 from torch import nn
 from tqdm.auto import tqdm
-from transformers import AutoConfig, AutoModel, AutoTokenizer, PreTrainedTokenizer
+from transformers import AutoModel, AutoTokenizer, PreTrainedTokenizer
 from transformers.cache_utils import StaticCache
 from vllm.model_executor.models.utils import AutoWeightsLoader
 
 from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig
 from vllm_omni.diffusion.distributed.utils import get_local_device
 from vllm_omni.diffusion.models.nextstep_1_1.modeling_flux_vae import AutoencoderKL
-from vllm_omni.diffusion.models.nextstep_1_1.modeling_fm_head import FlowMatchingHead
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.model_executor.model_loader.weight_utils import (
     download_weights_from_hf_specific,
 )
 
 
-def layer_norm(
-    input: torch.Tensor, normalized_shape: torch.Size, eps: float = 1e-6
-) -> torch.Tensor:
+def layer_norm(input: torch.Tensor, normalized_shape: torch.Size, eps: float = 1e-6) -> torch.Tensor:
     return F.layer_norm(input, normalized_shape, None, None, eps)
 
 
@@ -60,9 +56,7 @@ def to_pil(image: torch.Tensor, mode: str = "11") -> Image.Image:
 #################################################################################
 
 
-def get_2d_sincos_pos_embed(
-    embed_dim, grid_size, cls_token=False, extra_tokens=0, pe_interpolation=1.0
-):
+def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False, extra_tokens=0, pe_interpolation=1.0):
     """
     grid_size: int of the grid height and width
     return:
@@ -76,9 +70,7 @@ def get_2d_sincos_pos_embed(
     grid = grid.reshape([2, 1, grid_size, grid_size])
     pos_embed = get_2d_sincos_pos_embed_from_grid(embed_dim, grid)
     if cls_token and extra_tokens > 0:
-        pos_embed = np.concatenate(
-            [np.zeros([extra_tokens, embed_dim]), pos_embed], axis=0
-        )
+        pos_embed = np.concatenate([np.zeros([extra_tokens, embed_dim]), pos_embed], axis=0)
     return pos_embed
 
 
@@ -191,9 +183,7 @@ class NextStep11Pipeline(nn.Module):
             vae_checkpoint = os.path.join(model_path, "vae", "checkpoint.pt")
             vae_config = os.path.join(model_path, "vae", "config.json")
             if os.path.exists(vae_checkpoint) and os.path.exists(vae_config):
-                self.vae = AutoencoderKL.from_pretrained(
-                    os.path.join(model_path, "vae")
-                )
+                self.vae = AutoencoderKL.from_pretrained(os.path.join(model_path, "vae"))
             else:
                 raise ValueError(f"Could not find VAE at {vae_path}")
 
@@ -247,16 +237,8 @@ class NextStep11Pipeline(nn.Module):
     def _image_str(self, hw: tuple[int, int] = (256, 256)):
         """Generate image token string for given height/width."""
         latent_hw = (hw[0] // self.down_factor, hw[1] // self.down_factor)
-        image_ids = (
-            [self.boi]
-            + [self.image_placeholder_id] * (latent_hw[0] * latent_hw[1])
-            + [self.eoi]
-        )
-        image_str = (
-            DEFAULT_IMAGE_AREA_TOKEN
-            + hw2str(*latent_hw)
-            + self.tokenizer.decode(image_ids)
-        )
+        image_ids = [self.boi] + [self.image_placeholder_id] * (latent_hw[0] * latent_hw[1]) + [self.eoi]
+        image_str = DEFAULT_IMAGE_AREA_TOKEN + hw2str(*latent_hw) + self.tokenizer.decode(image_ids)
         return image_str
 
     def _check_input(
@@ -274,14 +256,13 @@ class NextStep11Pipeline(nn.Module):
             image_token_count = 0
             for caption in captions:
                 num_image_token = len(re.findall(r"<image>", caption))
-                assert (
-                    num_image_token == 1
-                ), f"Caption `{caption}` has {num_image_token} image tokens, but only 1 is allowed."
+                assert num_image_token == 1, (
+                    f"Caption `{caption}` has {num_image_token} image tokens, but only 1 is allowed."
+                )
                 image_token_count += num_image_token
             if image_token_count != len(images):
                 raise ValueError(
-                    f"Number of images ({len(images)}) does not match "
-                    f"number of image tokens ({image_token_count})."
+                    f"Number of images ({len(images)}) does not match number of image tokens ({image_token_count})."
                 )
 
             hws = [(image.size[1], image.size[0]) for image in images]
@@ -294,9 +275,7 @@ class NextStep11Pipeline(nn.Module):
                 num_image_tokens = processed_caption.count("<image>")
 
                 for _ in range(num_image_tokens):
-                    processed_caption = processed_caption.replace(
-                        "<image>", self._image_str(hws[image_idx]), 1
-                    )
+                    processed_caption = processed_caption.replace("<image>", self._image_str(hws[image_idx]), 1)
                     image_idx += 1
 
                 processed_captions.append(processed_caption)
@@ -317,9 +296,7 @@ class NextStep11Pipeline(nn.Module):
         """Build captions with CFG support."""
         if not isinstance(captions, list):
             captions = [captions]
-        captions = [
-            caption for caption in captions for _ in range(num_images_per_caption)
-        ]
+        captions = [caption for caption in captions for _ in range(num_images_per_caption)]
         if images is not None:
             images = [image for image in images for _ in range(num_images_per_caption)]
 
@@ -333,9 +310,7 @@ class NextStep11Pipeline(nn.Module):
         num_samples = len(captions)
         if cfg != 1.0 and cfg_img != 1.0:  # use both image and text CFG
             w, h = images[0].size
-            captions = captions + [
-                self._image_str((h, w)) + negative_prompt
-            ] * num_samples
+            captions = captions + [self._image_str((h, w)) + negative_prompt] * num_samples
             images = images + images
             captions = captions + [negative_prompt] * num_samples
         elif cfg != 1.0 and cfg_img == 1.0:  # use text CFG only
@@ -345,23 +320,12 @@ class NextStep11Pipeline(nn.Module):
 
         return captions, images
 
-    def _add_prefix_ids(
-        self, hw: tuple[int, int], input_ids: torch.Tensor, attention_mask: torch.Tensor
-    ):
+    def _add_prefix_ids(self, hw: tuple[int, int], input_ids: torch.Tensor, attention_mask: torch.Tensor):
         """Add prefix IDs for image generation."""
-        prefix_str = (
-            DEFAULT_IMAGE_AREA_TOKEN
-            + hw2str(hw[0] // self.down_factor, hw[1] // self.down_factor)
-        )
-        prefix_output = self.tokenizer(
-            prefix_str, truncation=False, add_special_tokens=True, return_tensors="pt"
-        )
-        prefix_input_ids = prefix_output.input_ids.to(
-            input_ids.device, dtype=input_ids.dtype
-        )
-        prefix_attention_mask = prefix_output.attention_mask.to(
-            attention_mask.device, dtype=attention_mask.dtype
-        )
+        prefix_str = DEFAULT_IMAGE_AREA_TOKEN + hw2str(hw[0] // self.down_factor, hw[1] // self.down_factor)
+        prefix_output = self.tokenizer(prefix_str, truncation=False, add_special_tokens=True, return_tensors="pt")
+        prefix_input_ids = prefix_output.input_ids.to(input_ids.device, dtype=input_ids.dtype)
+        prefix_attention_mask = prefix_output.attention_mask.to(attention_mask.device, dtype=attention_mask.dtype)
 
         # Remove bos token
         if self.tokenizer.bos_token is not None:
@@ -386,9 +350,7 @@ class NextStep11Pipeline(nn.Module):
 
         bsz = input_ids.shape[0]
         input_ids = torch.cat([input_ids, prefix_input_ids.expand(bsz, -1)], dim=1)
-        attention_mask = torch.cat(
-            [attention_mask, prefix_attention_mask.expand(bsz, -1)], dim=1
-        )
+        attention_mask = torch.cat([attention_mask, prefix_attention_mask.expand(bsz, -1)], dim=1)
 
         return input_ids, attention_mask
 
@@ -437,9 +399,7 @@ class NextStep11Pipeline(nn.Module):
             )
 
             if use_norm:
-                token_sampled = layer_norm(
-                    token_sampled, normalized_shape=token_sampled.size()[1:]
-                )
+                token_sampled = layer_norm(token_sampled, normalized_shape=token_sampled.size()[1:])
 
             if tokens is not None:
                 tokens = torch.cat([tokens, token_sampled.unsqueeze(1)], dim=1)
@@ -448,13 +408,9 @@ class NextStep11Pipeline(nn.Module):
 
             cur_inputs_embeds = self.model.image_in_projector(tokens[:, -1:])
             if cfg != 1.0 and cfg_img == 1.0:
-                cur_inputs_embeds = torch.cat(
-                    [cur_inputs_embeds, cur_inputs_embeds], dim=0
-                )
+                cur_inputs_embeds = torch.cat([cur_inputs_embeds, cur_inputs_embeds], dim=0)
             elif cfg != 1.0 and cfg_img != 1.0:
-                cur_inputs_embeds = torch.cat(
-                    [cur_inputs_embeds, cur_inputs_embeds, cur_inputs_embeds], dim=0
-                )
+                cur_inputs_embeds = torch.cat([cur_inputs_embeds, cur_inputs_embeds, cur_inputs_embeds], dim=0)
 
             attention_mask = torch.cat(
                 [attention_mask, attention_mask.new_ones((attention_mask.shape[0], 1))],
@@ -508,15 +464,11 @@ class NextStep11Pipeline(nn.Module):
         """
         # Extract parameters from request
         prompt = req.prompt if req.prompt is not None else prompt
-        negative_prompt = (
-            req.negative_prompt if req.negative_prompt is not None else negative_prompt
-        )
+        negative_prompt = req.negative_prompt if req.negative_prompt is not None else negative_prompt
         height = req.height or height or 512
         width = req.width or width or 512
         num_inference_steps = req.num_inference_steps or num_inference_steps
-        guidance_scale = (
-            req.guidance_scale if req.guidance_scale is not None else guidance_scale
-        )
+        guidance_scale = req.guidance_scale if req.guidance_scale is not None else guidance_scale
         seed = req.seed if req.seed is not None else seed
 
         # NextStep-specific parameters from request extra

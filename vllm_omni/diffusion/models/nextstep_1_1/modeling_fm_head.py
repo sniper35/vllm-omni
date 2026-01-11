@@ -38,17 +38,13 @@ class TimestepEmbedder(nn.Module):
         :return: an (N, D) Tensor of positional embeddings.
         """
         half = dim // 2
-        freqs = torch.exp(
-            -math.log(max_period)
-            * torch.arange(start=0, end=half, dtype=torch.float32)
-            / half
-        ).to(device=t.device)
+        freqs = torch.exp(-math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half).to(
+            device=t.device
+        )
         args = t[:, None].float() * freqs[None]
         embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
         if dim % 2:
-            embedding = torch.cat(
-                [embedding, torch.zeros_like(embedding[:, :1])], dim=-1
-            )
+            embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
         return embedding
 
     def forward(self, t):
@@ -70,9 +66,7 @@ class ResBlock(nn.Module):
             nn.Linear(self.intermediate_size, self.channels),
         )
 
-        self.adaLN_modulation = nn.Sequential(
-            nn.SiLU(), nn.Linear(channels, 3 * channels, bias=True)
-        )
+        self.adaLN_modulation = nn.Sequential(nn.SiLU(), nn.Linear(channels, 3 * channels, bias=True))
 
     def forward(self, x, y):
         shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(y).chunk(3, dim=-1)
@@ -84,13 +78,9 @@ class ResBlock(nn.Module):
 class FinalLayer(nn.Module):
     def __init__(self, model_channels, out_channels):
         super().__init__()
-        self.norm_final = nn.LayerNorm(
-            model_channels, elementwise_affine=False, eps=1e-6
-        )
+        self.norm_final = nn.LayerNorm(model_channels, elementwise_affine=False, eps=1e-6)
         self.linear = nn.Linear(model_channels, out_channels, bias=True)
-        self.adaLN_modulation = nn.Sequential(
-            nn.SiLU(), nn.Linear(model_channels, 2 * model_channels, bias=True)
-        )
+        self.adaLN_modulation = nn.Sequential(nn.SiLU(), nn.Linear(model_channels, 2 * model_channels, bias=True))
 
     def forward(self, x, c):
         shift, scale = self.adaLN_modulation(c).chunk(2, dim=-1)
@@ -177,19 +167,15 @@ def expand_t(t, x):
 def randn_tensor(shape, noise_repeat, device, dtype=torch.float32):
     bsz = shape[0]
     if bsz % noise_repeat != 0:
-        raise ValueError(
-            f"Batch size ({bsz}) must be divisible by noise repeat ({noise_repeat})"
-        )
+        raise ValueError(f"Batch size ({bsz}) must be divisible by noise repeat ({noise_repeat})")
     _shape = (noise_repeat,) + shape[1:]
-    _tensor = torch.randn(_shape, device=device, dtype=dtype).repeat(
-        bsz // noise_repeat, 1
-    )
+    _tensor = torch.randn(_shape, device=device, dtype=dtype).repeat(bsz // noise_repeat, 1)
     return _tensor
 
 
 class FlowMatchingHead(nn.Module):
     def __init__(self, input_dim, cond_dim, dim=1536, layers=12, mlp_ratio=1.0):
-        super(FlowMatchingHead, self).__init__()
+        super()
         self.input_dim = input_dim
         self.net = SimpleMLPAdaLN(
             input_dim=input_dim,
@@ -227,18 +213,12 @@ class FlowMatchingHead(nn.Module):
 
         model_output = self.net(xt, t, c)
         loss = (model_output.float() - ut.float()) ** 2
-        loss = torch.mean(
-            loss, dim=list(range(1, len(loss.size())))
-        )  # Take the mean over all non-batch dimensions.
-        loss = (
-            (loss * mask).sum() / (mask.sum() + 1e-8)
-            if mask is not None
-            else loss.mean()
-        )
+        loss = torch.mean(loss, dim=list(range(1, len(loss.size()))))  # Take the mean over all non-batch dimensions.
+        loss = (loss * mask).sum() / (mask.sum() + 1e-8) if mask is not None else loss.mean()
         return loss
 
     def get_score_from_velocity(self, velocity, x, t):
-        """Wrapper function: transfrom velocity prediction model to score
+        """Wrapper function: transform velocity prediction model to score
         Args:
             velocity: [bsz, ...] shaped tensor; velocity model output
             x:        [bsz, ...] shaped tensor; x_t data point
@@ -259,9 +239,7 @@ class FlowMatchingHead(nn.Module):
             velocity = uncond_v + cfg * (cond_v - uncond_v)
         elif cfg_mult == 3:
             cond_v, uncond_v1, uncond_v2 = torch.chunk(velocity, 3, dim=0)
-            velocity = (
-                uncond_v2 + cfg2 * (uncond_v1 - uncond_v2) + cfg * (cond_v - uncond_v1)
-            )
+            velocity = uncond_v2 + cfg2 * (uncond_v1 - uncond_v2) + cfg * (cond_v - uncond_v1)
         return velocity
 
     @torch.no_grad()
@@ -286,9 +264,7 @@ class FlowMatchingHead(nn.Module):
         if cfg2 > 1.0:
             cfg_mult += 1
 
-        noise = randn_tensor(
-            (c.shape[0] // cfg_mult, self.input_dim), noise_repeat, self.device
-        )
+        noise = randn_tensor((c.shape[0] // cfg_mult, self.input_dim), noise_repeat, self.device)
 
         mean_x = noise
         x = noise
@@ -308,21 +284,15 @@ class FlowMatchingHead(nn.Module):
             score = self.get_score_from_velocity(velocity, x, ti.expand(x.shape[0]).to(x))
             drift = velocity + (1 - expand_t(ti.expand(x.shape[0]).to(x), x)) * score
 
-            w_cur = randn_tensor(
-                (c.shape[0] // cfg_mult, self.input_dim), noise_repeat, self.device
-            )
+            w_cur = randn_tensor((c.shape[0] // cfg_mult, self.input_dim), noise_repeat, self.device)
             dw = w_cur * torch.sqrt(dt)
 
             mean_x = x + drift * dt
-            x = mean_x + torch.sqrt(
-                2 * (1 - expand_t(ti.expand(x.shape[0]).to(x), x))
-            ) * dw
+            x = mean_x + torch.sqrt(2 * (1 - expand_t(ti.expand(x.shape[0]).to(x), x))) * dw
             xs.append(x)
 
         combined = torch.cat([xs[-1]] * cfg_mult, dim=0)
-        velocity = self.net(
-            combined.to(c.dtype), timesteps[-1].expand(c.shape[0]).to(c), c
-        )
+        velocity = self.net(combined.to(c.dtype), timesteps[-1].expand(c.shape[0]).to(c), c)
         velocity = velocity.to(torch.float32)
 
         velocity = self.get_velocity_from_cfg(velocity, cfg, cfg2, cfg_mult)
@@ -330,8 +300,6 @@ class FlowMatchingHead(nn.Module):
         xs.append(x)
 
         if len(xs) != num_sampling_steps:
-            raise ValueError(
-                f"Samples ({len(xs)}) does not match the number of steps ({num_sampling_steps})"
-            )
+            raise ValueError(f"Samples ({len(xs)}) does not match the number of steps ({num_sampling_steps})")
 
         return xs[-1].to(c.dtype)
