@@ -4,7 +4,6 @@
 
 import os
 import re
-import sys
 from collections.abc import Iterable
 from typing import Literal
 
@@ -16,13 +15,14 @@ from diffusers.image_processor import VaeImageProcessor
 from PIL import Image
 from torch import nn
 from tqdm.auto import tqdm
-from transformers import AutoModel, AutoTokenizer, PreTrainedTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizer
 from transformers.cache_utils import StaticCache
 from vllm.model_executor.models.utils import AutoWeightsLoader
 
 from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig
 from vllm_omni.diffusion.distributed.utils import get_local_device
 from vllm_omni.diffusion.models.nextstep_1_1.modeling_flux_vae import AutoencoderKL
+from vllm_omni.diffusion.models.nextstep_1_1.modeling_nextstep import NextStepConfig, NextStepModel
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.model_executor.model_loader.weight_utils import (
     download_weights_from_hf_specific,
@@ -143,12 +143,11 @@ class NextStep11Pipeline(nn.Module):
         if not local_files_only:
             model_path = download_weights_from_hf_specific(model_path, None, ["*"])
 
-        # Add model directory to sys.path for trust_remote_code imports
-        # NextStep-1.1 uses local imports like "from models import ..." and "from utils import ..."
-        if model_path not in sys.path:
-            sys.path.insert(0, model_path)
+        # Load config from JSON
+        config_path = os.path.join(model_path, "config.json")
+        self.config = NextStepConfig.from_json_file(config_path)
 
-        # Load tokenizer
+        # Load tokenizer (tokenizer doesn't have the import conflict issue)
         self.tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(
             model_path,
             local_files_only=True,
@@ -159,49 +158,41 @@ class NextStep11Pipeline(nn.Module):
         )
         self.tokenizer.add_eos_token = False
 
-        # Load model with trust_remote_code for NextStep-1.1
-        self.model = AutoModel.from_pretrained(
+        # Load model using local implementation (avoids trust_remote_code import conflicts)
+        self.model = NextStepModel.from_pretrained(
             model_path,
-            local_files_only=True,
-            trust_remote_code=True,
-            torch_dtype=od_config.dtype,
+            config=self.config,
+            dtype=od_config.dtype,
+            device="cpu",  # Load on CPU first, move to device later
         )
         self.model.eval()
 
-        # Load config
-        self.config = self.model.config
-
         # Load VAE
-        vae_path = getattr(self.config, "vae_name_or_path", None)
-        if vae_path is None:
-            vae_path = os.path.join(model_path, "vae")
+        vae_rel_path = self.config.vae_name_or_path
+        if vae_rel_path is None:
+            vae_rel_path = "vae"
+        # vae_name_or_path is a relative path like "vae/" - join with model_path
+        vae_path = os.path.join(model_path, vae_rel_path.rstrip("/"))
 
         if os.path.exists(vae_path):
             self.vae = AutoencoderKL.from_pretrained(vae_path)
         else:
-            # Try loading from model directory
-            vae_checkpoint = os.path.join(model_path, "vae", "checkpoint.pt")
-            vae_config = os.path.join(model_path, "vae", "config.json")
-            if os.path.exists(vae_checkpoint) and os.path.exists(vae_config):
-                self.vae = AutoencoderKL.from_pretrained(os.path.join(model_path, "vae"))
-            else:
-                raise ValueError(f"Could not find VAE at {vae_path}")
+            raise ValueError(f"Could not find VAE at {vae_path}")
 
         self.vae.eval()
 
         # Calculate down factor
         vae_factor = 2 ** (len(self.vae.config.block_out_channels) - 1)
-        latent_patch_size = getattr(self.config, "latent_patch_size", 2)
-        self.down_factor = vae_factor * latent_patch_size
+        self.down_factor = vae_factor * self.config.patch_size
 
         # Get VAE parameters
         self.shift_factor = getattr(self.vae.config, "shift_factor", 0.0)
         self.scaling_factor = getattr(self.vae.config, "scaling_factor", 1.0)
 
         # Get special token IDs from config
-        self.boi = getattr(self.config, "boi", None)
-        self.eoi = getattr(self.config, "eoi", None)
-        self.image_placeholder_id = getattr(self.config, "image_placeholder_id", None)
+        self.boi = self.config.boi
+        self.eoi = self.config.eoi
+        self.image_placeholder_id = self.config.image_placeholder_id
 
         # Image processing
         self.pil2tensor = transforms.Compose(
@@ -424,7 +415,7 @@ class NextStep11Pipeline(nn.Module):
             )
             past_key_values = outputs.past_key_values
             c = outputs.last_hidden_state[:, -1:]
-            if getattr(self.config, "use_gen_pos_embed", False):
+            if self.config.use_gen_pos_embed:
                 c = c + self.model.gen_pos_embed_with_ar(hw[0], hw[1])[:, step + 1 : step + 2, :]
 
         return tokens
@@ -524,8 +515,9 @@ class NextStep11Pipeline(nn.Module):
         # LLM prefill
         max_new_len = (hw[0] // self.down_factor) * (hw[1] // self.down_factor)
         max_cache_len = input_ids.shape[1] + max_new_len
+        # Use the internal LlamaModel's config for StaticCache (requires transformers config)
         past_key_values = StaticCache(
-            config=self.config,
+            config=self.model.model.config,
             max_batch_size=input_ids.shape[0],
             max_cache_len=max_cache_len,
             device=self.device,
@@ -540,7 +532,7 @@ class NextStep11Pipeline(nn.Module):
         )
         past_key_values = outputs.past_key_values
         c = outputs.last_hidden_state[:, -1:]
-        if getattr(self.config, "use_gen_pos_embed", False):
+        if self.config.use_gen_pos_embed:
             c = c + self.model.gen_pos_embed_with_ar(height, width)[:, 0:1, :]
 
         # Decoding

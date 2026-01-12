@@ -175,7 +175,7 @@ def randn_tensor(shape, noise_repeat, device, dtype=torch.float32):
 
 class FlowMatchingHead(nn.Module):
     def __init__(self, input_dim, cond_dim, dim=1536, layers=12, mlp_ratio=1.0):
-        super()
+        super().__init__()
         self.input_dim = input_dim
         self.net = SimpleMLPAdaLN(
             input_dim=input_dim,
