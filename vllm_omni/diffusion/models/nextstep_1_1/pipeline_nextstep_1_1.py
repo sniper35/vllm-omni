@@ -463,14 +463,26 @@ class NextStep11Pipeline(nn.Module):
             DiffusionOutput containing generated images
         """
         # Extract parameters from request
-        prompt = req.prompt if req.prompt is not None else prompt
-        negative_prompt = req.negative_prompt if req.negative_prompt is not None else negative_prompt
-        height = req.height or height or 512
-        width = req.width or width or 512
-        num_inference_steps = req.num_inference_steps or num_inference_steps
-        guidance_scale = req.guidance_scale if req.guidance_scale is not None else guidance_scale
-        num_images_per_prompt = getattr(req, "num_outputs_per_prompt", None) or num_images_per_prompt
-        seed = req.seed if req.seed is not None else seed
+        # req.prompts is a list of str or dict; req.sampling_params holds all generation params
+        first_prompt = req.prompts[0] if req.prompts else None
+        if first_prompt is not None:
+            if isinstance(first_prompt, str):
+                prompt = first_prompt
+            else:
+                prompt = first_prompt.get("prompt") or prompt
+                negative_prompt = first_prompt.get("negative_prompt", negative_prompt)
+
+        height = req.sampling_params.height or height or 512
+        width = req.sampling_params.width or width or 512
+        num_inference_steps = req.sampling_params.num_inference_steps or num_inference_steps
+        if req.sampling_params.guidance_scale_provided:
+            guidance_scale = req.sampling_params.guidance_scale
+        num_images_per_prompt = (
+            req.sampling_params.num_outputs_per_prompt
+            if req.sampling_params.num_outputs_per_prompt > 0
+            else num_images_per_prompt
+        )
+        seed = req.sampling_params.seed if req.sampling_params.seed is not None else seed
 
         # NextStep-specific parameters from request extra
         cfg_img = req.sampling_params.extra_args.get("cfg_img", 1.0)
