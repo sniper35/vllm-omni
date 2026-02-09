@@ -10,7 +10,7 @@ from vllm_omni.outputs import OmniRequestOutput
 from vllm_omni.platforms import current_omni_platform
 
 # ruff: noqa: E402
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -19,7 +19,7 @@ from vllm_omni import Omni
 os.environ["VLLM_TEST_CLEAN_GPU_MEMORY"] = "1"
 
 
-models = ["Tongyi-MAI/Z-Image-Turbo", "riverclouds/qwen_image_random"]
+models = ["Tongyi-MAI/Z-Image-Turbo", "riverclouds/qwen_image_random", "stepfun-ai/NextStep-1.1"]
 
 # Modelscope can't find riverclouds/qwen_image_random
 # TODO: When NPU support is ready, remove this branch.
