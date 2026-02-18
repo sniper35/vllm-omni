@@ -175,26 +175,26 @@ def parse_args() -> argparse.Namespace:
     )
     # NextStep-1.1 specific arguments
     parser.add_argument(
-        "--cfg_img",
+        "--cfg-img",
         type=float,
         default=1.0,
         help="[NextStep-1.1 only] Image-level classifier-free guidance scale.",
     )
     parser.add_argument(
-        "--timesteps_shift",
+        "--timesteps-shift",
         type=float,
         default=1.0,
         help="[NextStep-1.1 only] Timesteps shift parameter for sampling.",
     )
     parser.add_argument(
-        "--cfg_schedule",
+        "--cfg-schedule",
         type=str,
         default="constant",
         choices=["constant", "linear"],
         help="[NextStep-1.1 only] CFG schedule type.",
     )
     parser.add_argument(
-        "--use_norm",
+        "--use-norm",
         action="store_true",
         help="[NextStep-1.1 only] Apply layer normalization to sampled tokens.",
     )
@@ -205,10 +205,6 @@ def main():
     args = parse_args()
     generator = torch.Generator(device=current_omni_platform.device_type).manual_seed(args.seed)
     use_nextstep = is_nextstep_model(args.model)
-
-    # Enable VAE memory optimizations: respect CLI flags, and auto-enable on NPU (not applicable for NextStep)
-    vae_use_slicing = args.vae_use_slicing or (current_omni_platform.is_npu() and not use_nextstep)
-    vae_use_tiling = args.vae_use_tiling or (current_omni_platform.is_npu() and not use_nextstep)
 
     # Configure cache based on backend type (not supported for NextStep)
     cache_config = None
@@ -272,8 +268,8 @@ def main():
     omni_kwargs = {
         "model": args.model,
         "enable_layerwise_offload": args.enable_layerwise_offload,
-        "vae_use_slicing": vae_use_slicing,
-        "vae_use_tiling": vae_use_tiling,
+        "vae_use_slicing": args.vae_use_slicing,
+        "vae_use_tiling": args.vae_use_tiling,
         "cache_backend": cache_backend,
         "cache_config": cache_config,
         "enable_cache_dit_summary": args.enable_cache_dit_summary,

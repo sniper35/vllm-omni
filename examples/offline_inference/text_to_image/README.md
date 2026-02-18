@@ -98,10 +98,10 @@ python text_to_image.py \
   --prompt "A baby panda wearing an Iron Man mask, holding a board with 'NextStep-1' written on it" \
   --height 512 \
   --width 512 \
-  --num_inference_steps 28 \
-  --guidance_scale 7.5 \
-  --cfg_img 1.0 \
-  --cfg_schedule constant \
+  --num-inference-steps 28 \
+  --guidance-scale 7.5 \
+  --cfg-img 1.0 \
+  --cfg-schedule constant \
   --output nextstep_output.png \
   --seed 42
 ```
@@ -120,14 +120,14 @@ python text_to_image.py \
 - `--vae-use-tiling`: enable VAE tiling for memory optimization.
 - `--cfg-parallel-size`: set it to 2 to enable CFG Parallel. See more examples in [`user_guide`](../../../docs/user_guide/diffusion/parallelism_acceleration.md#cfg-parallel).
 - `--enable-cpu-offload`: enable CPU offloading for diffusion models.
-- `--guidance_scale`: classifier-free guidance scale.
+- `--guidance-scale`: classifier-free guidance scale.
 
 **NextStep-1.1 specific:**
 
-- `--cfg_img`: image-level classifier-free guidance scale (default: 1.0).
-- `--timesteps_shift`: timesteps shift parameter for sampling (default: 1.0).
-- `--cfg_schedule`: CFG schedule type, "constant" or "linear" (default: "constant").
-- `--use_norm`: apply layer normalization to sampled tokens.
+- `--cfg-img`: image-level classifier-free guidance scale (default: 1.0).
+- `--timesteps-shift`: timesteps shift parameter for sampling (default: 1.0).
+- `--cfg-schedule`: CFG schedule type, "constant" or "linear" (default: "constant").
+- `--use-norm`: apply layer normalization to sampled tokens.
 
 > ℹ️ If you encounter OOM errors, try using `--vae-use-slicing` and `--vae-use-tiling` to reduce memory usage.
 
