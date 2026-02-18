@@ -1,6 +1,21 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+"""
+Unified Text-to-Image Generation Script
+
+Supports multiple diffusion models:
+- Qwen/Qwen-Image, Qwen/Qwen-Image-2512, Tongyi-MAI/Z-Image-Turbo
+- stepfun-ai/NextStep-1.1
+
+Example usage:
+    # Qwen-Image models
+    python text_to_image.py --model Tongyi-MAI/Z-Image-Turbo --prompt "a cup of coffee"
+
+    # NextStep-1.1
+    python text_to_image.py --model stepfun-ai/NextStep-1.1 --prompt "A baby panda"
+"""
+
 import argparse
 import os
 import time
@@ -16,13 +31,18 @@ from vllm_omni.outputs import OmniRequestOutput
 from vllm_omni.platforms import current_omni_platform
 
 
+def is_nextstep_model(model_name: str) -> bool:
+    """Check if the model is a NextStep model."""
+    return "nextstep" in model_name.lower()
+
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate an image with Qwen-Image.")
+    parser = argparse.ArgumentParser(description="Generate an image with supported diffusion models.")
     parser.add_argument(
         "--model",
         default="Qwen/Qwen-Image",
         help="Diffusion model name or local path. Supported models: "
-        "Qwen/Qwen-Image, Tongyi-MAI/Z-Image-Turbo, Qwen/Qwen-Image-2512",
+        "Qwen/Qwen-Image, Tongyi-MAI/Z-Image-Turbo, Qwen/Qwen-Image-2512, stepfun-ai/NextStep-1.1",
     )
     parser.add_argument("--prompt", default="a cup of coffee on the table", help="Text prompt for image generation.")
     parser.add_argument(
@@ -153,16 +173,51 @@ def parse_args() -> argparse.Namespace:
         default=1,
         help="Number of ranks used for VAE patch/tile parallelism (decode/encode).",
     )
+    # NextStep-1.1 specific arguments
+    parser.add_argument(
+        "--cfg_img",
+        type=float,
+        default=1.0,
+        help="[NextStep-1.1 only] Image-level classifier-free guidance scale.",
+    )
+    parser.add_argument(
+        "--timesteps_shift",
+        type=float,
+        default=1.0,
+        help="[NextStep-1.1 only] Timesteps shift parameter for sampling.",
+    )
+    parser.add_argument(
+        "--cfg_schedule",
+        type=str,
+        default="constant",
+        choices=["constant", "linear"],
+        help="[NextStep-1.1 only] CFG schedule type.",
+    )
+    parser.add_argument(
+        "--use_norm",
+        action="store_true",
+        help="[NextStep-1.1 only] Apply layer normalization to sampled tokens.",
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
     generator = torch.Generator(device=current_omni_platform.device_type).manual_seed(args.seed)
+    use_nextstep = is_nextstep_model(args.model)
 
-    # Configure cache based on backend type
+    # Enable VAE memory optimizations: respect CLI flags, and auto-enable on NPU (not applicable for NextStep)
+    vae_use_slicing = args.vae_use_slicing or (current_omni_platform.is_npu() and not use_nextstep)
+    vae_use_tiling = args.vae_use_tiling or (current_omni_platform.is_npu() and not use_nextstep)
+
+    # Configure cache based on backend type (not supported for NextStep)
     cache_config = None
-    if args.cache_backend == "cache_dit":
+    cache_backend = args.cache_backend
+    if use_nextstep and cache_backend:
+        logger.warning("Cache backend is not supported for NextStep-1.1 models. Disabling cache.")
+        cache_backend = None
+
+    if cache_backend == "cache_dit":
         # cache-dit configuration: Hybrid DBCache + SCM + TaylorSeer
         # All parameters marked with [cache-dit only] in DiffusionCacheConfig
         cache_config = {
@@ -179,7 +234,7 @@ def main():
             "scm_steps_mask_policy": None,  # SCM mask policy: None (disabled), "slow", "medium", "fast", "ultra"
             "scm_steps_policy": "dynamic",  # SCM steps policy: "dynamic" or "static"
         }
-    elif args.cache_backend == "tea_cache":
+    elif cache_backend == "tea_cache":
         # TeaCache configuration
         # All parameters marked with [tea_cache only] in DiffusionCacheConfig
         cache_config = {
@@ -189,7 +244,7 @@ def main():
             #       (e.g., QwenImagePipeline or FluxPipeline)
         }
 
-    # assert args.ring_degree == 1, "Ring attention is not supported yet"
+    # Configure parallel settings
     parallel_config = DiffusionParallelConfig(
         ulysses_degree=args.ulysses_degree,
         ring_degree=args.ring_degree,
@@ -213,19 +268,24 @@ def main():
     elif args.quantization:
         quant_kwargs["quantization"] = args.quantization
 
-    omni = Omni(
-        model=args.model,
-        enable_layerwise_offload=args.enable_layerwise_offload,
-        vae_use_slicing=args.vae_use_slicing,
-        vae_use_tiling=args.vae_use_tiling,
-        cache_backend=args.cache_backend,
-        cache_config=cache_config,
-        enable_cache_dit_summary=args.enable_cache_dit_summary,
-        parallel_config=parallel_config,
-        enforce_eager=args.enforce_eager,
-        enable_cpu_offload=args.enable_cpu_offload,
+    # Initialize Omni with model-specific settings
+    omni_kwargs = {
+        "model": args.model,
+        "enable_layerwise_offload": args.enable_layerwise_offload,
+        "vae_use_slicing": vae_use_slicing,
+        "vae_use_tiling": vae_use_tiling,
+        "cache_backend": cache_backend,
+        "cache_config": cache_config,
+        "enable_cache_dit_summary": args.enable_cache_dit_summary,
+        "parallel_config": parallel_config,
+        "enforce_eager": args.enforce_eager,
+        "enable_cpu_offload": args.enable_cpu_offload,
         **quant_kwargs,
-    )
+    }
+    if use_nextstep:
+        # NextStep-1.1 requires explicit pipeline class
+        omni_kwargs["model_class_name"] = "NextStep11Pipeline"
+    omni = Omni(**omni_kwargs)
 
     if profiler_enabled:
         print("[Profiler] Starting profiling...")
@@ -233,23 +293,44 @@ def main():
 
     # Time profiling for generation
     print(f"\n{'=' * 60}")
-    print("Generation Configuration:")
-    print(f"  Model: {args.model}")
-    print(f"  Inference steps: {args.num_inference_steps}")
-    print(f"  Cache backend: {args.cache_backend if args.cache_backend else 'None (no acceleration)'}")
-    print(f"  Quantization: {args.quantization if args.quantization else 'None (BF16)'}")
-    if ignored_layers:
-        print(f"  Ignored layers: {ignored_layers}")
-    print(
-        f"  Parallel configuration: tensor_parallel_size={args.tensor_parallel_size}, "
-        f"ulysses_degree={args.ulysses_degree}, ring_degree={args.ring_degree}, cfg_parallel_size={args.cfg_parallel_size}, "
-        f"vae_patch_parallel_size={args.vae_patch_parallel_size}"
-    )
-    print(f"  CPU offload: {args.enable_cpu_offload}")
-    print(f"  Image size: {args.width}x{args.height}")
+    if use_nextstep:
+        print("NextStep-1.1 Generation Configuration:")
+        print(f"  Model: {args.model}")
+        print(f"  Inference steps: {args.num_inference_steps}")
+        print(f"  CFG scale: {args.guidance_scale}")
+        print(f"  CFG image scale: {args.cfg_img}")
+        print(f"  Image size: {args.width}x{args.height}")
+        print(f"  Seed: {args.seed}")
+    else:
+        print("Generation Configuration:")
+        print(f"  Model: {args.model}")
+        print(f"  Inference steps: {args.num_inference_steps}")
+        print(f"  Cache backend: {cache_backend if cache_backend else 'None (no acceleration)'}")
+        print(f"  Quantization: {args.quantization if args.quantization else 'None (BF16)'}")
+        if ignored_layers:
+            print(f"  Ignored layers: {ignored_layers}")
+        print(
+            f"  Parallel configuration: tensor_parallel_size={args.tensor_parallel_size}, "
+            f"ulysses_degree={args.ulysses_degree}, ring_degree={args.ring_degree}, "
+            f"cfg_parallel_size={args.cfg_parallel_size}, "
+            f"vae_patch_parallel_size={args.vae_patch_parallel_size}"
+        )
+        print(f"  CPU offload: {args.enable_cpu_offload}")
+        print(f"  Image size: {args.width}x{args.height}")
     print(f"{'=' * 60}\n")
 
     generation_start = time.perf_counter()
+
+    extra_args = {}
+    if args.cfg_img is not None:
+        extra_args["cfg_img"] = args.cfg_img
+    if args.timesteps_shift is not None:
+        extra_args["timesteps_shift"] = args.timesteps_shift
+    if args.cfg_schedule is not None:
+        extra_args["cfg_schedule"] = args.cfg_schedule
+    if args.use_norm is not None:
+        extra_args["use_norm"] = args.use_norm
+
     outputs = omni.generate(
         {
             "prompt": args.prompt,
@@ -263,8 +344,10 @@ def main():
             guidance_scale=args.guidance_scale,
             num_inference_steps=args.num_inference_steps,
             num_outputs_per_prompt=args.num_images_per_prompt,
+            extra_args=extra_args,
         ),
     )
+
     generation_end = time.perf_counter()
     generation_time = generation_end - generation_start
 
