@@ -5,7 +5,9 @@
 import os
 import re
 import sys
+import threading
 from collections.abc import Iterable
+from contextlib import contextmanager
 from typing import Literal
 
 import numpy as np
@@ -104,6 +106,26 @@ def hw2str(h: int, w: int) -> str:
 
 
 DEFAULT_IMAGE_AREA_TOKEN = "<|image_area|>"
+_NEXTSTEP_IMPORT_PATH_LOCK = threading.Lock()
+
+
+@contextmanager
+def _temporary_sys_path(path: str):
+    """Temporarily expose model-local modules during trust_remote_code loading."""
+    with _NEXTSTEP_IMPORT_PATH_LOCK:
+        inserted = False
+        if path not in sys.path:
+            sys.path.insert(0, path)
+            inserted = True
+        try:
+            yield
+        finally:
+            if inserted:
+                try:
+                    sys.path.remove(path)
+                except ValueError:
+                    # Best effort cleanup: path may have been removed elsewhere.
+                    pass
 
 
 def get_nextstep11_post_process_func(od_config: OmniDiffusionConfig):
@@ -143,29 +165,30 @@ class NextStep11Pipeline(nn.Module):
         if not local_files_only:
             model_path = download_weights_from_hf_specific(model_path, None, ["*"])
 
-        # Add model directory to sys.path for trust_remote_code imports
-        # NextStep-1.1 uses local imports like "from models import ..." and "from utils import ..."
-        if model_path not in sys.path:
-            sys.path.append(model_path)
+        # NextStep-1.1 remote model code uses local imports from sibling files.
+        # Keep sys.path mutation scoped to trust_remote_code loading only.
+        # TODO(sniper35): Remove this temporary workaround once remote model
+        # definitions no longer rely on local import path injection.
+        with _temporary_sys_path(model_path):
+            # Load tokenizer
+            self.tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(
+                model_path,
+                local_files_only=True,
+                model_max_length=512,
+                padding_side="left",
+                use_fast=True,
+                trust_remote_code=True,
+            )
 
-        # Load tokenizer
-        self.tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(
-            model_path,
-            local_files_only=True,
-            model_max_length=512,
-            padding_side="left",
-            use_fast=True,
-            trust_remote_code=True,
-        )
+            # Load model with trust_remote_code for NextStep-1.1
+            self.model = AutoModel.from_pretrained(
+                model_path,
+                local_files_only=True,
+                trust_remote_code=True,
+                torch_dtype=od_config.dtype,
+            )
         self.tokenizer.add_eos_token = False
 
-        # Load model with trust_remote_code for NextStep-1.1
-        self.model = AutoModel.from_pretrained(
-            model_path,
-            local_files_only=True,
-            trust_remote_code=True,
-            torch_dtype=od_config.dtype,
-        )
         self.model.eval()
 
         # Load config
