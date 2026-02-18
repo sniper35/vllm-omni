@@ -91,7 +91,7 @@ python text_to_image.py \
 
 ### NextStep-1.1
 
-NextStep-1.1 needs extra arguments
+NextStep-1.1 can have extra arguments
 ```bash
 python text_to_image.py \
   --model stepfun-ai/NextStep-1.1 \
@@ -122,10 +122,6 @@ python text_to_image.py \
 - `--enable-cpu-offload`: enable CPU offloading for diffusion models.
 - `--guidance_scale`: classifier-free guidance scale.
 
-**Qwen-Image specific:**
-
-- `--cfg_scale`: true CFG scale (model-specific guidance strength, default: 4.0).
-
 **NextStep-1.1 specific:**
 
 - `--cfg_img`: image-level classifier-free guidance scale (default: 1.0).
@@ -137,7 +133,6 @@ python text_to_image.py \
 
 > ℹ️ Qwen-Image currently publishes best-effort presets at `1328x1328`, `1664x928`, `928x1664`, `1472x1140`, `1140x1472`, `1584x1056`, and `1056x1584`. Adjust `--height/--width` accordingly for the most reliable outcomes.
 
-> ℹ️ NextStep-1.1 model size is 60GB and there is no quantized version yet. To run it we need a GPU with large memory like H100.
 
 
 ## Web UI Demo
