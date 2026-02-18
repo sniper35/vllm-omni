@@ -146,7 +146,7 @@ class NextStep11Pipeline(nn.Module):
         # Add model directory to sys.path for trust_remote_code imports
         # NextStep-1.1 uses local imports like "from models import ..." and "from utils import ..."
         if model_path not in sys.path:
-            sys.path.insert(0, model_path)
+            sys.path.append(model_path)
 
         # Load tokenizer
         self.tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(
@@ -308,12 +308,12 @@ class NextStep11Pipeline(nn.Module):
         if negative_prompt is None:
             negative_prompt = ""
         num_samples = len(captions)
-        if cfg > 1.0 and cfg_img != 1.0:  # use both image and text CFG
+        if cfg > 1.0 and cfg_img != 1.0 and images is not None:  # use both image and text CFG
             w, h = images[0].size
             captions = captions + [self._image_str((h, w)) + negative_prompt] * num_samples
             images = images + images
             captions = captions + [negative_prompt] * num_samples
-        elif cfg > 1.0 and cfg_img == 1.0:  # use text CFG only
+        elif cfg > 1.0:  # use text CFG only (also when cfg_img != 1.0 but no images)
             captions = captions + [negative_prompt] * num_samples
         elif cfg == 1.0 and cfg_img == 1.0:
             pass
@@ -528,7 +528,6 @@ class NextStep11Pipeline(nn.Module):
             truncation=False,
             add_special_tokens=True,
             return_tensors="pt",
-            padding_side="left",
         )
         input_ids = output.input_ids.to(self.device)
         attention_mask = output.attention_mask.to(self.device)
