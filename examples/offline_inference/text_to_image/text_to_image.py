@@ -244,7 +244,7 @@ def main():
             #       (e.g., QwenImagePipeline or FluxPipeline)
         }
 
-    # Configure parallel settings
+    # assert args.ring_degree == 1, "Ring attention is not supported yet"
     parallel_config = DiffusionParallelConfig(
         ulysses_degree=args.ulysses_degree,
         ring_degree=args.ring_degree,
@@ -293,30 +293,24 @@ def main():
 
     # Time profiling for generation
     print(f"\n{'=' * 60}")
+    print("Generation Configuration:")
+    print(f"  Model: {args.model}")
+    print(f"  Inference steps: {args.num_inference_steps}")
+    print(f"  Cache backend: {cache_backend if cache_backend else 'None (no acceleration)'}")
+    print(f"  Quantization: {args.quantization if args.quantization else 'None (BF16)'}")
+    if ignored_layers:
+        print(f"  Ignored layers: {ignored_layers}")
+    print(
+        f"  Parallel configuration: tensor_parallel_size={args.tensor_parallel_size}, "
+        f"ulysses_degree={args.ulysses_degree}, ring_degree={args.ring_degree}, "
+        f"cfg_parallel_size={args.cfg_parallel_size}, "
+        f"vae_patch_parallel_size={args.vae_patch_parallel_size}"
+    )
+    print(f"  CPU offload: {args.enable_cpu_offload}")
+    print(f"  Image size: {args.width}x{args.height}")
     if use_nextstep:
-        print("NextStep-1.1 Generation Configuration:")
-        print(f"  Model: {args.model}")
-        print(f"  Inference steps: {args.num_inference_steps}")
         print(f"  CFG scale: {args.guidance_scale}")
         print(f"  CFG image scale: {args.cfg_img}")
-        print(f"  Image size: {args.width}x{args.height}")
-        print(f"  Seed: {args.seed}")
-    else:
-        print("Generation Configuration:")
-        print(f"  Model: {args.model}")
-        print(f"  Inference steps: {args.num_inference_steps}")
-        print(f"  Cache backend: {cache_backend if cache_backend else 'None (no acceleration)'}")
-        print(f"  Quantization: {args.quantization if args.quantization else 'None (BF16)'}")
-        if ignored_layers:
-            print(f"  Ignored layers: {ignored_layers}")
-        print(
-            f"  Parallel configuration: tensor_parallel_size={args.tensor_parallel_size}, "
-            f"ulysses_degree={args.ulysses_degree}, ring_degree={args.ring_degree}, "
-            f"cfg_parallel_size={args.cfg_parallel_size}, "
-            f"vae_patch_parallel_size={args.vae_patch_parallel_size}"
-        )
-        print(f"  CPU offload: {args.enable_cpu_offload}")
-        print(f"  Image size: {args.width}x{args.height}")
     print(f"{'=' * 60}\n")
 
     generation_start = time.perf_counter()
