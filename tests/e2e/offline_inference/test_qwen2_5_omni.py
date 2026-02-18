@@ -14,8 +14,6 @@ from tests.conftest import (
 from tests.utils import hardware_test
 from vllm_omni.platforms import current_omni_platform
 
-from .conftest import OmniRunner
-
 models = ["Qwen/Qwen2.5-Omni-3B"]
 
 # CI stage config optimized for 24GB GPU (L4/RTX3090) or NPU

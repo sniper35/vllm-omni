@@ -30,7 +30,7 @@ def compute_psnr(mse: float, max_val: float = 255.0) -> float:
     """Compute Peak Signal-to-Noise Ratio. Higher = more similar."""
     if mse == 0:
         return float("inf")
-    return 10.0 * math.log10((max_val ** 2) / mse)
+    return 10.0 * math.log10((max_val**2) / mse)
 
 
 def compute_ssim(img1: np.ndarray, img2: np.ndarray) -> float:
@@ -54,7 +54,7 @@ def compute_ssim(img1: np.ndarray, img2: np.ndarray) -> float:
     sigma12 = ((img1 - mu1) * (img2 - mu2)).mean(axis=(0, 1))
 
     numerator = (2 * mu1 * mu2 + C1) * (2 * sigma12 + C2)
-    denominator = (mu1 ** 2 + mu2 ** 2 + C1) * (sigma1_sq + sigma2_sq + C2)
+    denominator = (mu1**2 + mu2**2 + C1) * (sigma1_sq + sigma2_sq + C2)
 
     ssim_per_channel = numerator / denominator
     return float(ssim_per_channel.mean())
@@ -93,7 +93,7 @@ def create_comparison_image(
     try:
         font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", 18)
         font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 14)
-    except (OSError, IOError):
+    except OSError:
         font_large = ImageFont.load_default()
         font_small = font_large
 
@@ -133,21 +133,11 @@ def create_comparison_image(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Compare two images with quantitative metrics."
-    )
-    parser.add_argument(
-        "--image1", required=True, help="Path to first image."
-    )
-    parser.add_argument(
-        "--label1", default="Image 1", help="Label for first image."
-    )
-    parser.add_argument(
-        "--image2", required=True, help="Path to second image."
-    )
-    parser.add_argument(
-        "--label2", default="Image 2", help="Label for second image."
-    )
+    parser = argparse.ArgumentParser(description="Compare two images with quantitative metrics.")
+    parser.add_argument("--image1", required=True, help="Path to first image.")
+    parser.add_argument("--label1", default="Image 1", help="Label for first image.")
+    parser.add_argument("--image2", required=True, help="Path to second image.")
+    parser.add_argument("--label2", default="Image 2", help="Label for second image.")
     parser.add_argument(
         "--output",
         default="comparison.png",
@@ -176,10 +166,7 @@ def main():
     img2 = Image.open(args.image2).convert("RGB")
 
     if img1.size != img2.size:
-        print(
-            f"WARNING: Image sizes differ ({img1.size} vs {img2.size}). "
-            f"Resizing image2 to match image1."
-        )
+        print(f"WARNING: Image sizes differ ({img1.size} vs {img2.size}). Resizing image2 to match image1.")
         img2 = img2.resize(img1.size, Image.LANCZOS)
 
     arr1 = np.array(img1)
@@ -229,9 +216,7 @@ def main():
     print(f"{'=' * 60}\n")
 
     # Create and save comparison image
-    comparison = create_comparison_image(
-        img1, img2, args.label1, args.label2, metrics, verdict
-    )
+    comparison = create_comparison_image(img1, img2, args.label1, args.label2, metrics, verdict)
     comparison.save(args.output)
     print(f"Saved comparison image to {args.output}")
 

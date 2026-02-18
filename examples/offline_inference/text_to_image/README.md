@@ -144,3 +144,13 @@ python gradio_demo.py --port 7862
 ```
 
 Then open `http://localhost:7862/` on your local browser to interact with the web UI.
+python examples/offline_inference/text_to_image/text_to_image.py \
+  --prompt "A baby panda wearing an Iron Man mask, holding a board with 'NextStep-1' written on it" \
+  --height 512 \
+  --width 512 \
+  --num_inference_steps 50 \
+  --guidance_scale 7.5 \
+  --cfg_img 1.0 \
+  --cfg_schedule constant \
+  --output test_output_panda_0218.png \
+  --seed 42

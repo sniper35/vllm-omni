@@ -25,9 +25,7 @@ from transformers import AutoModel, AutoTokenizer
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Generate an image using the official HF NextStepPipeline."
-    )
+    parser = argparse.ArgumentParser(description="Generate an image using the official HF NextStepPipeline.")
     parser.add_argument(
         "--model",
         default="stepfun-ai/NextStep-1.1",
@@ -35,8 +33,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--prompt",
-        default="A baby panda wearing an Iron Man mask, holding a board "
-        "with 'NextStep-1' written on it",
+        default="A baby panda wearing an Iron Man mask, holding a board with 'NextStep-1' written on it",
         help="Text prompt for image generation.",
     )
     parser.add_argument(
@@ -54,12 +51,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--height", type=int, default=512, help="Image height.")
     parser.add_argument("--width", type=int, default=512, help="Image width.")
-    parser.add_argument(
-        "--cfg", type=float, default=7.5, help="Text CFG guidance scale."
-    )
-    parser.add_argument(
-        "--cfg_img", type=float, default=1.0, help="Image CFG guidance scale."
-    )
+    parser.add_argument("--cfg", type=float, default=7.5, help="Text CFG guidance scale.")
+    parser.add_argument("--cfg_img", type=float, default=1.0, help="Image CFG guidance scale.")
     parser.add_argument(
         "--cfg_schedule",
         type=str,
@@ -84,9 +77,7 @@ def parse_args() -> argparse.Namespace:
         default=1.0,
         help="Timesteps shift parameter.",
     )
-    parser.add_argument(
-        "--seed", type=int, default=42, help="Random seed for reproducibility."
-    )
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
     parser.add_argument(
         "--output",
         type=str,
@@ -151,9 +142,7 @@ def main():
     vae_path = os.path.join(model_path, "vae")
     vae = NextStepVAE.from_pretrained(vae_path)
 
-    pipeline = NextStepPipeline(
-        tokenizer=tokenizer, model=model, vae=vae
-    ).to(device="cuda", dtype=dtype)
+    pipeline = NextStepPipeline(tokenizer=tokenizer, model=model, vae=vae).to(device="cuda", dtype=dtype)
 
     load_end = time.perf_counter()
     print(f"Model loaded in {load_end - load_start:.2f}s")
@@ -204,9 +193,8 @@ def main():
     print(f"Saved image to {args.output}")
 
     if args.save_latents:
-        latent_path = args.output.rsplit(".", 1)[0] + "_latents.pt"
-        print(f"Note: --save_latents requires pipeline modification; skipping.")
-        print(f"  (The HF pipeline does not expose raw latents by default.)")
+        print("Note: --save_latents requires pipeline modification; skipping.")
+        print("  (The HF pipeline does not expose raw latents by default.)")
 
 
 if __name__ == "__main__":
