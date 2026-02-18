@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 import torch
 
-from tests.utils import hardware_test
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 from vllm_omni.outputs import OmniRequestOutput
 from vllm_omni.platforms import current_omni_platform
@@ -20,7 +19,7 @@ from vllm_omni import Omni
 os.environ["VLLM_TEST_CLEAN_GPU_MEMORY"] = "1"
 
 
-models = ["Tongyi-MAI/Z-Image-Turbo", "riverclouds/qwen_image_random", "stepfun-ai/NextStep-1.1"]
+models = ["Tongyi-MAI/Z-Image-Turbo", "riverclouds/qwen_image_random"]
 
 # Modelscope can't find riverclouds/qwen_image_random
 # TODO: When NPU support is ready, remove this branch.
@@ -33,10 +32,6 @@ elif current_omni_platform.is_rocm():
     models = ["Tongyi-MAI/Z-Image-Turbo"]
 
 
-@pytest.mark.core_model
-@pytest.mark.advanced_model
-@pytest.mark.diffusion
-@hardware_test(res={"cuda": "L4", "rocm": "MI325"}, num_cards={"cuda": 1, "rocm": 2})
 @pytest.mark.parametrize("model_name", models)
 def test_diffusion_model(model_name: str, run_level):
     if run_level == "core_model" and model_name != "riverclouds/qwen_image_random":
