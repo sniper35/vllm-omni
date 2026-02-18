@@ -392,7 +392,7 @@ class NextStep11Pipeline(nn.Module):
             token_sampled = self.model.image_head.sample(
                 c=c.squeeze(1),
                 cfg=cfg_iter,
-                cfg2=cfg_img_iter,
+                cfg_img=cfg_img_iter,
                 timesteps_shift=timesteps_shift,
                 num_sampling_steps=num_sampling_steps,
                 noise_repeat=num_images_per_caption,
