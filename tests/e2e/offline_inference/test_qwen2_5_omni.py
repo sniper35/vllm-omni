@@ -15,7 +15,6 @@ from tests.utils import hardware_test
 from vllm_omni.platforms import current_omni_platform
 
 from .conftest import OmniRunner
-from .process_utils import create_new_process_for_each_test
 
 models = ["Qwen/Qwen2.5-Omni-3B"]
 
