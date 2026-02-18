@@ -1,6 +1,6 @@
 # Text-To-Image
 
-This folder provides several entrypoints for experimenting with `Qwen/Qwen-Image` `Qwen/Qwen-Image-2512` `Tongyi-MAI/Z-Image-Turbo` using vLLM-Omni:
+This folder provides several entrypoints for experimenting with `Qwen/Qwen-Image` `Qwen/Qwen-Image-2512` `Tongyi-MAI/Z-Image-Turbo` `stepfun-ai/NextStep-1.1` using vLLM-Omni, note that NextStep-1.1 has different architecture so we treat it differently regarding running arguments and pipeline.
 
 - `text_to_image.py`: command-line script for single image generation with advanced options.
 - `web_demo.py`: lightweight Gradio UI for interactive prompt/seed/CFG exploration.
@@ -74,6 +74,8 @@ if __name__ == "__main__":
 
 ## Local CLI Usage
 
+### Qwen-Image Models
+
 ```bash
 python text_to_image.py \
   --model Tongyi-MAI/Z-Image-Turbo \
@@ -87,23 +89,56 @@ python text_to_image.py \
   --output outputs/coffee.png
 ```
 
-Key arguments:
+### NextStep-1.1
+
+NextStep-1.1 needs extra arguments
+```bash
+python text_to_image.py \
+  --model stepfun-ai/NextStep-1.1 \
+  --prompt "A baby panda wearing an Iron Man mask, holding a board with 'NextStep-1' written on it" \
+  --height 512 \
+  --width 512 \
+  --num_inference_steps 28 \
+  --guidance_scale 7.5 \
+  --cfg_img 1.0 \
+  --cfg_schedule constant \
+  --output nextstep_output.png \
+  --seed 42
+```
+
+### Key Arguments
+
+**Common arguments:**
 
 - `--prompt`: text description (string).
 - `--seed`: integer seed for deterministic sampling.
-- `--cfg-scale`: true CFG scale (model-specific guidance strength).
 - `--num-images-per-prompt`: number of images to generate per prompt (saves as `output`, `output_1`, ...).
 - `--num-inference-steps`: diffusion sampling steps (more steps = higher quality, slower).
-- `--height/--width`: output resolution (defaults 1024x1024).
+- `--height/--width`: output resolution.
 - `--output`: path to save the generated PNG.
 - `--vae-use-slicing`: enable VAE slicing for memory optimization.
 - `--vae-use-tiling`: enable VAE tiling for memory optimization.
 - `--cfg-parallel-size`: set it to 2 to enable CFG Parallel. See more examples in [`user_guide`](../../../docs/user_guide/diffusion/parallelism_acceleration.md#cfg-parallel).
 - `--enable-cpu-offload`: enable CPU offloading for diffusion models.
+- `--guidance_scale`: classifier-free guidance scale.
+
+**Qwen-Image specific:**
+
+- `--cfg_scale`: true CFG scale (model-specific guidance strength, default: 4.0).
+
+**NextStep-1.1 specific:**
+
+- `--cfg_img`: image-level classifier-free guidance scale (default: 1.0).
+- `--timesteps_shift`: timesteps shift parameter for sampling (default: 1.0).
+- `--cfg_schedule`: CFG schedule type, "constant" or "linear" (default: "constant").
+- `--use_norm`: apply layer normalization to sampled tokens.
 
 > ℹ️ If you encounter OOM errors, try using `--vae-use-slicing` and `--vae-use-tiling` to reduce memory usage.
 
 > ℹ️ Qwen-Image currently publishes best-effort presets at `1328x1328`, `1664x928`, `928x1664`, `1472x1140`, `1140x1472`, `1584x1056`, and `1056x1584`. Adjust `--height/--width` accordingly for the most reliable outcomes.
+
+> ℹ️ NextStep-1.1 model size is 60GB and there is no quantized version yet. To run it we need a GPU with large memory like H100.
+
 
 ## Web UI Demo
 
