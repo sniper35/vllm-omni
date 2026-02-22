@@ -279,9 +279,11 @@ class NextStep11Pipeline(nn.Module):
             image_token_count = 0
             for caption in captions:
                 num_image_token = len(re.findall(r"<image>", caption))
-                assert num_image_token == 1, (
-                    f"Caption `{caption}` has {num_image_token} image tokens, but only 1 is allowed."
-                )
+                if num_image_token != 1:
+                    raise ValueError(
+                        f"Caption must contain exactly one <image> token. "
+                        f"Found {num_image_token} in: {caption[:100]}..."
+                    )
                 image_token_count += num_image_token
             if image_token_count != len(images):
                 raise ValueError(

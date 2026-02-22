@@ -420,10 +420,12 @@ class AutoencoderKL(nn.Module):
         config_path = os.path.join(model_path, "config.json")
         ckpt_path = os.path.join(model_path, "checkpoint.pt")
 
-        if not os.path.isdir(model_path) or not os.path.isfile(config_path) or not os.path.isfile(ckpt_path):
-            raise ValueError(
-                f"Invalid model path: {model_path}. The path should contain both config.json and checkpoint.pt files."
-            )
+        if not os.path.isdir(model_path):
+            raise ValueError(f"Model path does not exist: {model_path}")
+        if not os.path.isfile(config_path):
+            raise ValueError(f"Config file not found: {config_path}")
+        if not os.path.isfile(ckpt_path):
+            raise ValueError(f"Checkpoint file not found: {ckpt_path}")
 
         state_dict = torch.load(ckpt_path, map_location="cpu", weights_only=True)
 
