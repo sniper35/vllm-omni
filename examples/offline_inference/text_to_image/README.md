@@ -112,18 +112,18 @@ python text_to_image.py \
 
 - `--prompt`: text description (string).
 - `--seed`: integer seed for deterministic sampling.
+- `--cfg-scale`: true CFG scale (model-specific guidance strength).
 - `--num-images-per-prompt`: number of images to generate per prompt (saves as `output`, `output_1`, ...).
 - `--num-inference-steps`: diffusion sampling steps (more steps = higher quality, slower).
-- `--height/--width`: output resolution.
+- `--height/--width`: output resolution (defaults 1024x1024).
 - `--output`: path to save the generated PNG.
 - `--vae-use-slicing`: enable VAE slicing for memory optimization.
 - `--vae-use-tiling`: enable VAE tiling for memory optimization.
 - `--cfg-parallel-size`: set it to 2 to enable CFG Parallel. See more examples in [`user_guide`](../../../docs/user_guide/diffusion/parallelism_acceleration.md#cfg-parallel).
 - `--enable-cpu-offload`: enable CPU offloading for diffusion models.
-- `--guidance-scale`: classifier-free guidance scale.
 
 **NextStep-1.1 specific:**
-
+- `--guidance-scale`: classifier-free guidance scale.
 - `--cfg-img`: image-level classifier-free guidance scale (default: 1.0).
 - `--timesteps-shift`: timesteps shift parameter for sampling (default: 1.0).
 - `--cfg-schedule`: CFG schedule type, "constant" or "linear" (default: "constant").
@@ -132,8 +132,6 @@ python text_to_image.py \
 > ℹ️ If you encounter OOM errors, try using `--vae-use-slicing` and `--vae-use-tiling` to reduce memory usage.
 
 > ℹ️ Qwen-Image currently publishes best-effort presets at `1328x1328`, `1664x928`, `928x1664`, `1472x1140`, `1140x1472`, `1584x1056`, and `1056x1584`. Adjust `--height/--width` accordingly for the most reliable outcomes.
-
-
 
 ## Web UI Demo
 
@@ -144,13 +142,3 @@ python gradio_demo.py --port 7862
 ```
 
 Then open `http://localhost:7862/` on your local browser to interact with the web UI.
-python examples/offline_inference/text_to_image/text_to_image.py \
-  --prompt "A baby panda wearing an Iron Man mask, holding a board with 'NextStep-1' written on it" \
-  --height 512 \
-  --width 512 \
-  --num_inference_steps 50 \
-  --guidance_scale 7.5 \
-  --cfg_img 1.0 \
-  --cfg_schedule constant \
-  --output test_output_panda_0218.png \
-  --seed 42
