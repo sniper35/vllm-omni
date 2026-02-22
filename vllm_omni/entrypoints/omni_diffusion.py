@@ -55,7 +55,8 @@ class OmniDiffusion:
             self.od_config.omni_kv_config.setdefault("engine_input_source", engine_input_source)
 
         # Diffusers-style models expose `model_index.json` with `_class_name`.
-        # Bagel models (and other non-diffusers) typically expose `config.json`.
+        # Non-diffusers models (e.g. Bagel, NextStep) only have `config.json`,
+        # so we fall back to reading that and mapping model_type manually.
         try:
             config_dict = get_hf_file_to_dict(
                 "model_index.json",
