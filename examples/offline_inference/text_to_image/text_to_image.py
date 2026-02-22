@@ -1,21 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-"""
-Unified Text-to-Image Generation Script
-
-Supports multiple diffusion models:
-- Qwen/Qwen-Image, Qwen/Qwen-Image-2512, Tongyi-MAI/Z-Image-Turbo
-- stepfun-ai/NextStep-1.1
-
-Example usage:
-    # Qwen-Image models
-    python text_to_image.py --model Tongyi-MAI/Z-Image-Turbo --prompt "a cup of coffee"
-
-    # NextStep-1.1
-    python text_to_image.py --model stepfun-ai/NextStep-1.1 --prompt "A baby panda"
-"""
-
 import argparse
 import os
 import time
@@ -298,15 +283,11 @@ def main():
         print(f"  Ignored layers: {ignored_layers}")
     print(
         f"  Parallel configuration: tensor_parallel_size={args.tensor_parallel_size}, "
-        f"ulysses_degree={args.ulysses_degree}, ring_degree={args.ring_degree}, "
-        f"cfg_parallel_size={args.cfg_parallel_size}, "
+        f"ulysses_degree={args.ulysses_degree}, ring_degree={args.ring_degree}, cfg_parallel_size={args.cfg_parallel_size}, "
         f"vae_patch_parallel_size={args.vae_patch_parallel_size}"
     )
     print(f"  CPU offload: {args.enable_cpu_offload}")
     print(f"  Image size: {args.width}x{args.height}")
-    if use_nextstep:
-        print(f"  CFG scale: {args.guidance_scale}")
-        print(f"  CFG image scale: {args.cfg_img}")
     print(f"{'=' * 60}\n")
 
     generation_start = time.perf_counter()
