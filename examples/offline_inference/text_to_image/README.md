@@ -74,7 +74,7 @@ if __name__ == "__main__":
 
 ## Local CLI Usage
 
-### Qwen-Image Models
+### Qwen/Tongyi Models
 
 ```bash
 python text_to_image.py \
@@ -89,7 +89,7 @@ python text_to_image.py \
   --output outputs/coffee.png
 ```
 
-### NextStep-1.1
+### NextStep Models
 
 NextStep-1.1 can have extra arguments
 ```bash
@@ -121,9 +121,9 @@ python text_to_image.py \
 - `--vae-use-tiling`: enable VAE tiling for memory optimization.
 - `--cfg-parallel-size`: set it to 2 to enable CFG Parallel. See more examples in [`user_guide`](../../../docs/user_guide/diffusion/parallelism_acceleration.md#cfg-parallel).
 - `--enable-cpu-offload`: enable CPU offloading for diffusion models.
+- `--guidance-scale`: classifier-free guidance scale.
 
 **NextStep-1.1 specific:**
-- `--guidance-scale`: classifier-free guidance scale.
 - `--cfg-img`: image-level classifier-free guidance scale (default: 1.0).
 - `--timesteps-shift`: timesteps shift parameter for sampling (default: 1.0).
 - `--cfg-schedule`: CFG schedule type, "constant" or "linear" (default: "constant").
