@@ -514,9 +514,11 @@ class NextStep11Pipeline(nn.Module):
         cfg_schedule = req.sampling_params.extra_args.get("cfg_schedule", "constant")
         positive_prompt = req.sampling_params.extra_args.get("positive_prompt", None)
 
-        # Set seed for reproducibility
-        if seed is not None:
+        # Set seed for reproducibility (use generator if provided, else fall back to seed)
+        if generator is None and seed is not None:
             set_seed(seed)
+        elif generator is not None:
+            torch.manual_seed(generator.initial_seed())
 
         # Prepare hw tuple
         hw = (height, width)

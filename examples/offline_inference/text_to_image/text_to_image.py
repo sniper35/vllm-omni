@@ -17,8 +17,16 @@ from vllm_omni.platforms import current_omni_platform
 
 
 def is_nextstep_model(model_name: str) -> bool:
-    """Check if the model is a NextStep model."""
-    return "nextstep" in model_name.lower()
+    """Check if the model is a NextStep model by reading its config."""
+    from vllm.transformers_utils.config import get_hf_file_to_dict
+
+    try:
+        cfg = get_hf_file_to_dict("config.json", model_name)
+        if cfg and cfg.get("model_type") == "nextstep":
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def parse_args() -> argparse.Namespace:
@@ -292,15 +300,12 @@ def main():
 
     generation_start = time.perf_counter()
 
-    extra_args = {}
-    if args.cfg_img is not None:
-        extra_args["cfg_img"] = args.cfg_img
-    if args.timesteps_shift is not None:
-        extra_args["timesteps_shift"] = args.timesteps_shift
-    if args.cfg_schedule is not None:
-        extra_args["cfg_schedule"] = args.cfg_schedule
-    if args.use_norm is not None:
-        extra_args["use_norm"] = args.use_norm
+    extra_args = {
+        "cfg_img": args.cfg_img,
+        "timesteps_shift": args.timesteps_shift,
+        "cfg_schedule": args.cfg_schedule,
+        "use_norm": args.use_norm,
+    }
 
     outputs = omni.generate(
         {
