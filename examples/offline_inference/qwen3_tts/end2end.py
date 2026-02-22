@@ -15,7 +15,6 @@ os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
 from vllm.utils.argparse_utils import FlexibleArgumentParser
 
-from vllm import SamplingParams
 from vllm_omni import Omni
 
 logger = logging.getLogger(__name__)

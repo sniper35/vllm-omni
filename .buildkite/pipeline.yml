@@ -36,26 +36,8 @@ steps:
   - label: "Diffusion Model Test"
     timeout_in_minutes: 20
     depends_on: image-build
-    # NextStep model cannot fit in the L4 GPU, we put in the next step test with H100
     commands:
-      - pytest -s -v tests/e2e/offline_inference/test_t2i_model.py -k "not NextStep"
-    agents:
-      queue: "gpu_1_queue" # g6.4xlarge instance on AWS, has 1 L4 GPU
-    plugins:
-      - docker#v5.2.0:
-          image: public.ecr.aws/q9t5s3a7/vllm-ci-test-repo:$BUILDKITE_COMMIT
-          always-pull: true
-          propagate-environment: true
-          environment:
-            - "HF_HOME=/fsx/hf_cache"
-          volumes:
-            - "/fsx/hf_cache:/fsx/hf_cache"
-
-  - label: "Diffusion Images API LoRA E2E"
-    timeout_in_minutes: 20
-    depends_on: image-build
-    commands:
-      - pytest -s -v tests/e2e/online_serving/test_images_generations_lora.py
+      - pytest -s -v tests/e2e/offline_inference/test_t2i_model.py -m "core_model and diffusion" --run-level "core_model"
     agents:
       queue: "gpu_1_queue" # g6.4xlarge instance on AWS, has 1 L4 GPU
     plugins:

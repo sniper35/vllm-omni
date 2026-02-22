@@ -34,6 +34,7 @@ elif current_omni_platform.is_rocm():
 
 
 @pytest.mark.core_model
+@pytest.mark.advanced_model
 @pytest.mark.diffusion
 @hardware_test(res={"cuda": "L4", "rocm": "MI325"}, num_cards={"cuda": 1, "rocm": 2})
 @pytest.mark.parametrize("model_name", models)
