@@ -150,7 +150,9 @@ def test_load_model_clears_cache_backend_for_unsupported_pipeline(monkeypatch):
     monkeypatch.setattr(model_runner_module, "DiffusersPipelineLoader", _DummyLoader)
     monkeypatch.setattr(model_runner_module, "DeviceMemoryProfiler", _DummyMemoryProfiler)
     monkeypatch.setattr(model_runner_module, "get_offload_backend", lambda od_config, device: None)
-    monkeypatch.setattr(model_runner_module, "get_cache_backend", lambda cache_backend, cache_config: dummy_cache_backend)
+    monkeypatch.setattr(
+        model_runner_module, "get_cache_backend", lambda cache_backend, cache_config: dummy_cache_backend
+    )
 
     DiffusionModelRunner.load_model(runner)
 

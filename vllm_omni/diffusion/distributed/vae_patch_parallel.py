@@ -456,8 +456,10 @@ def maybe_wrap_vae_decode_with_patch_parallelism(
     vae = getattr(pipeline, "vae", None)
     if vae is None or not hasattr(vae, "decode"):
         return
-    # Accept both diffusers AutoencoderKL and compatible custom VAE classes
-    # (the decode strategies access vae.decoder directly).
+    # NOTE: Use capability checks (not strict diffusers type checks) because
+    # NextStep's custom VAE is compatible but not a diffusers AutoencoderKL.
+    # TODO(vae-pp): Replace duck-typing with an explicit VAE compatibility
+    # validator/protocol and add per-model integration tests.
     if not hasattr(vae, "decoder"):
         return
 

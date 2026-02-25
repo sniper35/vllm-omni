@@ -458,7 +458,7 @@ class NextStep11Pipeline(nn.Module):
             cfg_rank = 0
             cfg_group = None
 
-        token_dim = self.config.latent_channels * self.config.latent_patch_size ** 2
+        token_dim = self.config.latent_channels * self.config.latent_patch_size**2
         indices = list(range(max_new_len))
         indices = tqdm(indices, desc="Generating") if progress else indices
 
@@ -495,8 +495,10 @@ class NextStep11Pipeline(nn.Module):
                     )
                 else:
                     token_sampled = torch.empty(
-                        batch_per_rank, token_dim,
-                        device=c.device, dtype=c.dtype,
+                        batch_per_rank,
+                        token_dim,
+                        device=c.device,
+                        dtype=c.dtype,
                     )
                 # Broadcast sampled token from rank 0 to all ranks
                 token_sampled = token_sampled.contiguous()
