@@ -124,6 +124,11 @@ _VAE_PATCH_PARALLEL_ALLOWLIST = {
     "NextStep11Pipeline",
 }
 
+_NO_CACHE_ACCELERATION = {
+    # Pipelines that do not support cache acceleration (cache_dit / tea_cache).
+    "NextStep11Pipeline",
+}
+
 
 def initialize_model(
     od_config: OmniDiffusionConfig,

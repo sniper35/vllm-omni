@@ -22,6 +22,7 @@ from vllm.utils.mem_utils import DeviceMemoryProfiler, GiB_bytes
 
 from vllm_omni.diffusion.cache.cache_dit_backend import cache_summary
 from vllm_omni.diffusion.cache.selector import get_cache_backend
+from vllm_omni.diffusion.registry import _NO_CACHE_ACCELERATION
 from vllm_omni.diffusion.compile import regionally_compile
 from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig
 from vllm_omni.diffusion.forward_context import set_forward_context
@@ -148,7 +149,15 @@ class DiffusionModelRunner:
         self.cache_backend = get_cache_backend(self.od_config.cache_backend, self.od_config.cache_config)
 
         if self.cache_backend is not None:
-            self.cache_backend.enable(self.pipeline)
+            if self.od_config.model_class_name in _NO_CACHE_ACCELERATION:
+                logger.warning(
+                    "Cache backend '%s' is not supported for %s; disabling cache acceleration.",
+                    self.od_config.cache_backend,
+                    self.od_config.model_class_name,
+                )
+                self.cache_backend = None
+            else:
+                self.cache_backend.enable(self.pipeline)
 
         logger.info("Model runner: Initialization complete.")
 

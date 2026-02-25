@@ -168,10 +168,10 @@ def parse_args() -> argparse.Namespace:
     )
     # NextStep-1.1 specific arguments
     parser.add_argument(
-        "--cfg-img",
+        "--guidance-scale-2",
         type=float,
         default=1.0,
-        help="[NextStep-1.1 only] Image-level classifier-free guidance scale.",
+        help="Secondary guidance scale (e.g. image-level CFG for NextStep-1.1).",
     )
     parser.add_argument(
         "--timesteps-shift",
@@ -199,12 +199,8 @@ def main():
     generator = torch.Generator(device=current_omni_platform.device_type).manual_seed(args.seed)
     use_nextstep = is_nextstep_model(args.model)
 
-    # Configure cache based on backend type (not supported for NextStep)
     cache_config = None
     cache_backend = args.cache_backend
-    if use_nextstep and cache_backend:
-        logger.warning("Cache backend is not supported for NextStep-1.1 models. Disabling cache.")
-        cache_backend = None
 
     if cache_backend == "cache_dit":
         # cache-dit configuration: Hybrid DBCache + SCM + TaylorSeer
@@ -301,7 +297,6 @@ def main():
     generation_start = time.perf_counter()
 
     extra_args = {
-        "cfg_img": args.cfg_img,
         "timesteps_shift": args.timesteps_shift,
         "cfg_schedule": args.cfg_schedule,
         "use_norm": args.use_norm,
@@ -318,6 +313,7 @@ def main():
             generator=generator,
             true_cfg_scale=args.cfg_scale,
             guidance_scale=args.guidance_scale,
+            guidance_scale_2=args.guidance_scale_2,
             num_inference_steps=args.num_inference_steps,
             num_outputs_per_prompt=args.num_images_per_prompt,
             extra_args=extra_args,

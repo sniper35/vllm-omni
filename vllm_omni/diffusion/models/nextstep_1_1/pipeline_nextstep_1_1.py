@@ -17,6 +17,7 @@ from torch import nn
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer, PreTrainedTokenizer
 from transformers.cache_utils import StaticCache
+from vllm.logger import init_logger
 from vllm.model_executor.models.utils import AutoWeightsLoader
 
 from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig
@@ -36,6 +37,8 @@ from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.model_executor.model_loader.weight_utils import (
     download_weights_from_hf_specific,
 )
+
+logger = init_logger(__name__)
 
 
 def layer_norm(input: torch.Tensor, normalized_shape: torch.Size, eps: float = 1e-6) -> torch.Tensor:
@@ -397,6 +400,14 @@ class NextStep11Pipeline(nn.Module):
         # CFG-Parallel: each rank handles one portion of the CFG batch
         cfg_world_size = get_classifier_free_guidance_world_size()
         cfg_parallel = cfg_world_size > 1 and cfg_mult > 1
+        if cfg_parallel and cfg_world_size != cfg_mult:
+            logger.warning(
+                "CFG parallel world size (%d) does not match the number of active "
+                "CFG branches (%d); falling back to non-parallel CFG.",
+                cfg_world_size,
+                cfg_mult,
+            )
+            cfg_parallel = False
         if cfg_parallel:
             cfg_rank = get_classifier_free_guidance_rank()
             cfg_group = get_cfg_group()
@@ -579,7 +590,11 @@ class NextStep11Pipeline(nn.Module):
         seed = req.sampling_params.seed if req.sampling_params.seed is not None else seed
 
         # NextStep-specific parameters from request extra
-        cfg_img = req.sampling_params.extra_args.get("cfg_img", 1.0)
+        cfg_img = (
+            req.sampling_params.guidance_scale_2
+            if req.sampling_params.guidance_scale_2 is not None
+            else req.sampling_params.extra_args.get("cfg_img", 1.0)
+        )
         timesteps_shift = req.sampling_params.extra_args.get("timesteps_shift", 1.0)
         use_norm = req.sampling_params.extra_args.get("use_norm", False)
         cfg_schedule = req.sampling_params.extra_args.get("cfg_schedule", "constant")
