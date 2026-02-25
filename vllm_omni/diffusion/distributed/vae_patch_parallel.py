@@ -456,11 +456,9 @@ def maybe_wrap_vae_decode_with_patch_parallelism(
     vae = getattr(pipeline, "vae", None)
     if vae is None or not hasattr(vae, "decode"):
         return
-    try:
-        from diffusers.models.autoencoders import AutoencoderKL
-    except Exception:
-        return
-    if not isinstance(vae, AutoencoderKL):
+    # Accept both diffusers AutoencoderKL and compatible custom VAE classes
+    # (the decode strategies access vae.decoder directly).
+    if not hasattr(vae, "decoder"):
         return
 
     if getattr(vae, "_vllm_vae_patch_parallel_installed", False):

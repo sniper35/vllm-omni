@@ -299,6 +299,7 @@ class AutoencoderKL(nn.Module):
                 self.block_out_channels = params.ch_mult
                 self.scaling_factor = params.scaling_factor
                 self.shift_factor = params.shift_factor
+                self.out_channels = params.out_ch
 
         self.config = Config(params)
 
@@ -322,6 +323,13 @@ class AutoencoderKL(nn.Module):
 
         self.encoder_norm = params.encoder_norm
         self.psz = params.psz
+
+        # Tiling attributes for VAE patch parallelism
+        self.use_tiling = False
+        vae_scale_factor = 2 ** (len(params.ch_mult) - 1)
+        self.tile_latent_min_size = int(params.resolution / vae_scale_factor)
+        self.tile_overlap_factor = 0.25
+        self.tile_sample_min_size = params.resolution
 
         self.apply(self._init_weights)
 
@@ -403,6 +411,18 @@ class AutoencoderKL(nn.Module):
             return (dec,)
 
         return DecoderOutput(sample=dec)
+
+    def blend_v(self, a: torch.Tensor, b: torch.Tensor, blend_extent: int) -> torch.Tensor:
+        blend_extent = min(a.shape[2], b.shape[2], blend_extent)
+        for y in range(blend_extent):
+            b[:, :, y, :] = a[:, :, -blend_extent + y, :] * (1 - y / blend_extent) + b[:, :, y, :] * (y / blend_extent)
+        return b
+
+    def blend_h(self, a: torch.Tensor, b: torch.Tensor, blend_extent: int) -> torch.Tensor:
+        blend_extent = min(a.shape[3], b.shape[3], blend_extent)
+        for x in range(blend_extent):
+            b[:, :, :, x] = a[:, :, :, -blend_extent + x] * (1 - x / blend_extent) + b[:, :, :, x] * (x / blend_extent)
+        return b
 
     def forward(self, input, sample_posterior=True, noise_strength=0.0):
         posterior = self.encode(input).latent_dist
