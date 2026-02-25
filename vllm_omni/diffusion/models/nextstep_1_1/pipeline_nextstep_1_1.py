@@ -4,10 +4,7 @@
 
 import os
 import re
-import sys
-import threading
 from collections.abc import Iterable
-from contextlib import contextmanager
 from typing import Literal
 
 import numpy as np
@@ -18,13 +15,23 @@ from diffusers.image_processor import VaeImageProcessor
 from PIL import Image
 from torch import nn
 from tqdm.auto import tqdm
-from transformers import AutoModel, AutoTokenizer, PreTrainedTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizer
 from transformers.cache_utils import StaticCache
 from vllm.model_executor.models.utils import AutoWeightsLoader
 
 from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig
+from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineLoader
+from vllm_omni.diffusion.distributed.parallel_state import (
+    get_cfg_group,
+    get_classifier_free_guidance_rank,
+    get_classifier_free_guidance_world_size,
+)
 from vllm_omni.diffusion.distributed.utils import get_local_device
 from vllm_omni.diffusion.models.nextstep_1_1.modeling_flux_vae import AutoencoderKL
+from vllm_omni.diffusion.models.nextstep_1_1.modeling_nextstep import (
+    NextStepConfig,
+    NextStepModel,
+)
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.model_executor.model_loader.weight_utils import (
     download_weights_from_hf_specific,
@@ -106,26 +113,6 @@ def hw2str(h: int, w: int) -> str:
 
 
 DEFAULT_IMAGE_AREA_TOKEN = "<|image_area|>"
-_NEXTSTEP_IMPORT_PATH_LOCK = threading.Lock()
-
-
-@contextmanager
-def _temporary_sys_path(path: str):
-    """Temporarily expose model-local modules during trust_remote_code loading."""
-    with _NEXTSTEP_IMPORT_PATH_LOCK:
-        inserted = False
-        if path not in sys.path:
-            sys.path.insert(0, path)
-            inserted = True
-        try:
-            yield
-        finally:
-            if inserted:
-                try:
-                    sys.path.remove(path)
-                except ValueError:
-                    # Best effort cleanup: path may have been removed elsewhere.
-                    pass
 
 
 def get_nextstep11_post_process_func(od_config: OmniDiffusionConfig):
@@ -165,30 +152,20 @@ class NextStep11Pipeline(nn.Module):
         if not local_files_only:
             model_path = download_weights_from_hf_specific(model_path, None, ["*"])
 
-        # NextStep-1.1 remote model code uses local imports from sibling files.
-        # Keep sys.path mutation scoped to trust_remote_code loading only.
-        # TODO(sniper35): Remove this temporary workaround once remote model
-        # definitions no longer rely on local import path injection.
-        with _temporary_sys_path(model_path):
-            # Load tokenizer
-            self.tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(
-                model_path,
-                local_files_only=True,
-                model_max_length=512,
-                padding_side="left",
-                use_fast=True,
-                trust_remote_code=True,
-            )
-
-            # Load model with trust_remote_code for NextStep-1.1
-            self.model = AutoModel.from_pretrained(
-                model_path,
-                local_files_only=True,
-                trust_remote_code=True,
-                torch_dtype=od_config.dtype,
-            )
+        # Load tokenizer (still uses trust_remote_code for tokenizer only)
+        self.tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(
+            model_path,
+            local_files_only=True,
+            model_max_length=512,
+            padding_side="left",
+            use_fast=True,
+            trust_remote_code=True,
+        )
         self.tokenizer.add_eos_token = False
 
+        # Load model from local TP-aware code (weights loaded later via load_weights)
+        config = NextStepConfig.from_json(os.path.join(model_path, "config.json"))
+        self.model = NextStepModel(config)
         self.model.eval()
 
         # Load config
@@ -198,6 +175,9 @@ class NextStep11Pipeline(nn.Module):
         vae_path = getattr(self.config, "vae_name_or_path", None)
         if vae_path is None:
             vae_path = os.path.join(model_path, "vae")
+        elif not os.path.isabs(vae_path):
+            # Resolve relative vae_name_or_path (e.g. "vae/") against model dir
+            vae_path = os.path.join(model_path, vae_path)
 
         if os.path.exists(vae_path):
             self.vae = AutoencoderKL.from_pretrained(vae_path)
@@ -237,8 +217,18 @@ class NextStep11Pipeline(nn.Module):
         self.__device = self._execution_device
         self.__dtype = od_config.dtype
 
-        # Empty weights_sources for now since we load everything directly
-        self.weights_sources = []
+        # Weight sources: model weights from safetensors, prefixed with "model."
+        # so AutoWeightsLoader dispatches to self.model.load_weights()
+        self.weights_sources = [
+            DiffusersPipelineLoader.ComponentSource(
+                model_or_path=model_path,
+                subfolder=None,
+                revision=None,
+                prefix="model.",
+                fall_back_to_pt=True,
+                allow_patterns_overrides=["model-*.safetensors", "model.safetensors"],
+            )
+        ]
 
     @property
     def device(self):
@@ -396,7 +386,56 @@ class NextStep11Pipeline(nn.Module):
         progress: bool = True,
         hw: tuple[int, int] = (256, 256),
     ):
-        """Autoregressive image token decoding."""
+        """Autoregressive image token decoding with optional CFG-Parallel."""
+        # Determine CFG multiplier
+        cfg_mult = 1
+        if cfg > 1.0:
+            cfg_mult += 1
+        if cfg_img > 1.0:
+            cfg_mult += 1
+
+        # CFG-Parallel: each rank handles one portion of the CFG batch
+        cfg_world_size = get_classifier_free_guidance_world_size()
+        cfg_parallel = cfg_world_size > 1 and cfg_mult > 1
+        if cfg_parallel:
+            cfg_rank = get_classifier_free_guidance_rank()
+            cfg_group = get_cfg_group()
+            # Split batch: rank 0 gets positive, rank 1 gets first uncond, etc.
+            full_bsz = c.shape[0]
+            batch_per_rank = full_bsz // cfg_mult
+            start = cfg_rank * batch_per_rank
+            end = start + batch_per_rank
+            c = c[start:end]
+            attention_mask = attention_mask[start:end]
+            # Slice the StaticCache to keep only this rank's portion.
+            # We rebuild a new StaticCache for this rank's batch size and copy
+            # the relevant slices from the pre-filled cache.
+            if isinstance(past_key_values, StaticCache):
+                old_cache = past_key_values
+                new_cache = StaticCache(
+                    config=self.config,
+                    max_cache_len=old_cache.get_max_cache_shape(),
+                )
+                for layer_idx, layer in enumerate(old_cache.layers):
+                    if not layer.is_initialized:
+                        continue
+                    # Force-initialize the new layer with sliced tensors
+                    new_layer = new_cache.layers[layer_idx]
+                    sliced_keys = layer.keys[start:end]
+                    new_layer.lazy_initialization(sliced_keys)
+                    new_layer.keys.copy_(sliced_keys)
+                    new_layer.values.copy_(layer.values[start:end])
+                    # Preserve cumulative_length for sliding window layers
+                    # (StaticSlidingWindowLayer tracks seq position via this
+                    # counter, not by counting non-zero entries)
+                    if hasattr(layer, "cumulative_length"):
+                        new_layer.cumulative_length = layer.cumulative_length
+                past_key_values = new_cache
+        else:
+            cfg_rank = 0
+            cfg_group = None
+
+        token_dim = self.config.latent_channels * self.config.latent_patch_size ** 2
         indices = list(range(max_new_len))
         indices = tqdm(indices, desc="Generating") if progress else indices
 
@@ -413,15 +452,41 @@ class NextStep11Pipeline(nn.Module):
             else:
                 raise NotImplementedError(f"Unknown cfg_schedule: {cfg_schedule}")
 
-            c = self.model.image_out_projector(c)
-            token_sampled = self.model.image_head.sample(
-                c=c.squeeze(1),
-                cfg=cfg_iter,
-                cfg_img=cfg_img_iter,
-                timesteps_shift=timesteps_shift,
-                num_sampling_steps=num_sampling_steps,
-                noise_repeat=num_images_per_caption,
-            )
+            if cfg_parallel:
+                # Each rank projects its own portion
+                c_proj = self.model.image_out_projector(c)
+                # Gather projected context from all CFG ranks
+                c_gathered = cfg_group.all_gather(c_proj, separate_tensors=True)
+                c_full = torch.cat(c_gathered, dim=0)  # (full_bsz, 1, hidden)
+
+                # Rank 0 runs the FM head sampling (it needs full CFG batch)
+                if cfg_rank == 0:
+                    token_sampled = self.model.image_head.sample(
+                        c=c_full.squeeze(1),
+                        cfg=cfg_iter,
+                        cfg_img=cfg_img_iter,
+                        timesteps_shift=timesteps_shift,
+                        num_sampling_steps=num_sampling_steps,
+                        noise_repeat=num_images_per_caption,
+                    )
+                else:
+                    token_sampled = torch.empty(
+                        batch_per_rank, token_dim,
+                        device=c.device, dtype=c.dtype,
+                    )
+                # Broadcast sampled token from rank 0 to all ranks
+                token_sampled = token_sampled.contiguous()
+                cfg_group.broadcast(token_sampled, src=0)
+            else:
+                c_proj = self.model.image_out_projector(c)
+                token_sampled = self.model.image_head.sample(
+                    c=c_proj.squeeze(1),
+                    cfg=cfg_iter,
+                    cfg_img=cfg_img_iter,
+                    timesteps_shift=timesteps_shift,
+                    num_sampling_steps=num_sampling_steps,
+                    noise_repeat=num_images_per_caption,
+                )
 
             if use_norm:
                 token_sampled = layer_norm(token_sampled, normalized_shape=token_sampled.size()[1:])
@@ -431,11 +496,15 @@ class NextStep11Pipeline(nn.Module):
             else:
                 tokens = token_sampled.unsqueeze(1)
 
+            # Prepare input embeds for next LLM step
             cur_inputs_embeds = self.model.image_in_projector(tokens[:, -1:])
-            if cfg > 1.0 and cfg_img == 1.0:
-                cur_inputs_embeds = torch.cat([cur_inputs_embeds, cur_inputs_embeds], dim=0)
-            elif cfg > 1.0 and cfg_img != 1.0:
-                cur_inputs_embeds = torch.cat([cur_inputs_embeds, cur_inputs_embeds, cur_inputs_embeds], dim=0)
+            if not cfg_parallel:
+                # Non-parallel: duplicate embeds for CFG batch
+                if cfg > 1.0 and cfg_img == 1.0:
+                    cur_inputs_embeds = torch.cat([cur_inputs_embeds, cur_inputs_embeds], dim=0)
+                elif cfg > 1.0 and cfg_img != 1.0:
+                    cur_inputs_embeds = torch.cat([cur_inputs_embeds, cur_inputs_embeds, cur_inputs_embeds], dim=0)
+            # In CFG-parallel mode, each rank already has its portion — no duplication needed
 
             attention_mask = torch.cat(
                 [attention_mask, attention_mask.new_ones((attention_mask.shape[0], 1))],
@@ -565,10 +634,7 @@ class NextStep11Pipeline(nn.Module):
         max_cache_len = input_ids.shape[1] + max_new_len
         past_key_values = StaticCache(
             config=self.config,
-            max_batch_size=input_ids.shape[0],
             max_cache_len=max_cache_len,
-            device=self.device,
-            dtype=self.dtype,
         )
         inputs_embeds = self.model.prepare_inputs_embeds(input_ids, latents)
         outputs = self.model.forward_model(
