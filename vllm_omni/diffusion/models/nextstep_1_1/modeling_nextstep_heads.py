@@ -279,16 +279,25 @@ class FlowMatchingHead(nn.Module):
         c: torch.Tensor,
         cfg: float = 1.0,
         cfg_img: float = 1.0,
+        cfg_mult: int | None = None,
         timesteps_shift: float = 1.0,
         num_sampling_steps: int = 20,
         last_step_size: float = 0.0,
         noise_repeat: int = 1,
     ) -> torch.Tensor:
-        cfg_mult = 1
-        if cfg > 1.0:
-            cfg_mult += 1
-        if cfg_img > 1.0:
-            cfg_mult += 1
+        if cfg_mult is None:
+            cfg_mult = 1
+            if cfg > 1.0:
+                cfg_mult += 1
+            if cfg_img > 1.0:
+                cfg_mult += 1
+
+        if cfg_mult <= 0:
+            raise ValueError(f"Invalid cfg_mult={cfg_mult}; expected a positive value.")
+        if c.shape[0] % cfg_mult != 0:
+            raise ValueError(
+                f"Invalid CFG layout: condition batch size {c.shape[0]} is not divisible by cfg_mult={cfg_mult}."
+            )
 
         noise = randn_tensor(
             (c.shape[0] // cfg_mult, self.input_dim), noise_repeat, self.device

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable
-from dataclasses import dataclass, field, fields
 
 import numpy as np
 import torch
@@ -26,7 +25,6 @@ from vllm_omni.diffusion.models.nextstep_1_1.modeling_nextstep_llama import (
     LlamaRMSNorm,
     LlamaRotaryEmbedding,
 )
-
 
 # ---------------------------------------------------------------------------
 # Positional embedding utilities (inlined from remote utils/model_utils.py)
@@ -140,7 +138,7 @@ class NextStepModel(nn.Module):
         # lm_head is part of the checkpoint but not used during image generation
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
-        # Image projectors — kept as plain nn.Linear (see plan for rationale)
+        # Image projectors.
         token_dim = config.latent_channels * config.latent_patch_size**2
         self.image_in_projector = nn.Linear(token_dim, config.hidden_size)
         self.image_out_projector = nn.Linear(config.hidden_size, config.hidden_size)

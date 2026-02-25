@@ -100,7 +100,7 @@ python text_to_image.py \
   --width 512 \
   --num-inference-steps 28 \
   --guidance-scale 7.5 \
-  --cfg-img 1.0 \
+  --guidance-scale-2 1.0 \
   --cfg-schedule constant \
   --output nextstep_output.png \
   --seed 42
@@ -119,12 +119,12 @@ python text_to_image.py \
 - `--output`: path to save the generated PNG.
 - `--vae-use-slicing`: enable VAE slicing for memory optimization.
 - `--vae-use-tiling`: enable VAE tiling for memory optimization.
-- `--cfg-parallel-size`: set it to 2 to enable CFG Parallel. See more examples in [`user_guide`](../../../docs/user_guide/diffusion/parallelism_acceleration.md#cfg-parallel).
+- `--cfg-parallel-size`: set it to 2 to enable CFG Parallel. See more examples in [`user_guide`](../../../docs/user_guide/diffusion_acceleration.md#using-cfg-parallel).
 - `--enable-cpu-offload`: enable CPU offloading for diffusion models.
 - `--guidance-scale`: classifier-free guidance scale.
 
 **NextStep-1.1 specific:**
-- `--cfg-img`: image-level classifier-free guidance scale (default: 1.0).
+- `--guidance-scale-2`: secondary guidance scale, e.g. image-level CFG (default: 1.0).
 - `--timesteps-shift`: timesteps shift parameter for sampling (default: 1.0).
 - `--cfg-schedule`: CFG schedule type, "constant" or "linear" (default: "constant").
 - `--use-norm`: apply layer normalization to sampled tokens.

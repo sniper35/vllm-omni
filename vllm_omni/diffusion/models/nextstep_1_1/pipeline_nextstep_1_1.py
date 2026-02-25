@@ -21,13 +21,13 @@ from vllm.logger import init_logger
 from vllm.model_executor.models.utils import AutoWeightsLoader
 
 from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig
-from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineLoader
 from vllm_omni.diffusion.distributed.parallel_state import (
     get_cfg_group,
     get_classifier_free_guidance_rank,
     get_classifier_free_guidance_world_size,
 )
 from vllm_omni.diffusion.distributed.utils import get_local_device
+from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineLoader
 from vllm_omni.diffusion.models.nextstep_1_1.modeling_flux_vae import AutoencoderKL
 from vllm_omni.diffusion.models.nextstep_1_1.modeling_nextstep import (
     NextStepConfig,
@@ -301,6 +301,16 @@ class NextStep11Pipeline(nn.Module):
             captions = processed_captions
         return captions, images
 
+    @staticmethod
+    def _resolve_cfg_layout(cfg: float, cfg_img: float, has_image_conditions: bool) -> tuple[int, float]:
+        """Resolve the active CFG branch layout for the current request."""
+        use_text_cfg = cfg > 1.0
+        # Image CFG branch is only meaningful when the request has an image condition.
+        use_img_cfg = use_text_cfg and has_image_conditions and cfg_img != 1.0
+        cfg_mult = 1 + int(use_text_cfg) + int(use_img_cfg)
+        effective_cfg_img = cfg_img if use_img_cfg else 1.0
+        return cfg_mult, effective_cfg_img
+
     def _build_captions(
         self,
         captions: str | list[str],
@@ -310,7 +320,7 @@ class NextStep11Pipeline(nn.Module):
         negative_prompt: str | None = None,
         cfg: float = 1.0,
         cfg_img: float = 1.0,
-    ):
+    ) -> tuple[list[str], list[Image.Image] | None, int, float]:
         """Build captions with CFG support."""
         if not isinstance(captions, list):
             captions = [captions]
@@ -322,21 +332,21 @@ class NextStep11Pipeline(nn.Module):
         if positive_prompt is not None and positive_prompt != "":
             captions = [f"{caption} {positive_prompt}" for caption in captions]
 
+        cfg_mult, effective_cfg_img = self._resolve_cfg_layout(cfg, cfg_img, images is not None)
+
         # Add negative prompt for CFG
         if negative_prompt is None:
             negative_prompt = ""
         num_samples = len(captions)
-        if cfg > 1.0 and cfg_img != 1.0 and images is not None:  # use both image and text CFG
+        if cfg_mult == 3:
             w, h = images[0].size
             captions = captions + [self._image_str((h, w)) + negative_prompt] * num_samples
             images = images + images
             captions = captions + [negative_prompt] * num_samples
-        elif cfg > 1.0:  # use text CFG only (also when cfg_img != 1.0 but no images)
+        elif cfg_mult == 2:
             captions = captions + [negative_prompt] * num_samples
-        elif cfg == 1.0 and cfg_img == 1.0:
-            pass
 
-        return captions, images
+        return captions, images, cfg_mult, effective_cfg_img
 
     def _add_prefix_ids(self, hw: tuple[int, int], input_ids: torch.Tensor, attention_mask: torch.Tensor):
         """Add prefix IDs for image generation."""
@@ -383,6 +393,7 @@ class NextStep11Pipeline(nn.Module):
         use_norm: bool = False,
         cfg: float = 1.0,
         cfg_img: float = 1.0,
+        cfg_mult: int = 1,
         cfg_schedule: Literal["linear", "constant"] = "constant",
         timesteps_shift: float = 1.0,
         num_sampling_steps: int = 20,
@@ -390,12 +401,14 @@ class NextStep11Pipeline(nn.Module):
         hw: tuple[int, int] = (256, 256),
     ):
         """Autoregressive image token decoding with optional CFG-Parallel."""
-        # Determine CFG multiplier
-        cfg_mult = 1
-        if cfg > 1.0:
-            cfg_mult += 1
-        if cfg_img > 1.0:
-            cfg_mult += 1
+        if cfg_mult <= 0:
+            raise ValueError(f"Invalid cfg_mult={cfg_mult}; expected a positive value.")
+
+        full_bsz = c.shape[0]
+        if full_bsz % cfg_mult != 0:
+            raise ValueError(
+                f"Invalid CFG layout: batch size {full_bsz} is not divisible by active CFG multiplier {cfg_mult}."
+            )
 
         # CFG-Parallel: each rank handles one portion of the CFG batch
         cfg_world_size = get_classifier_free_guidance_world_size()
@@ -412,7 +425,6 @@ class NextStep11Pipeline(nn.Module):
             cfg_rank = get_classifier_free_guidance_rank()
             cfg_group = get_cfg_group()
             # Split batch: rank 0 gets positive, rank 1 gets first uncond, etc.
-            full_bsz = c.shape[0]
             batch_per_rank = full_bsz // cfg_mult
             start = cfg_rank * batch_per_rank
             end = start + batch_per_rank
@@ -476,6 +488,7 @@ class NextStep11Pipeline(nn.Module):
                         c=c_full.squeeze(1),
                         cfg=cfg_iter,
                         cfg_img=cfg_img_iter,
+                        cfg_mult=cfg_mult,
                         timesteps_shift=timesteps_shift,
                         num_sampling_steps=num_sampling_steps,
                         noise_repeat=num_images_per_caption,
@@ -494,6 +507,7 @@ class NextStep11Pipeline(nn.Module):
                     c=c_proj.squeeze(1),
                     cfg=cfg_iter,
                     cfg_img=cfg_img_iter,
+                    cfg_mult=cfg_mult,
                     timesteps_shift=timesteps_shift,
                     num_sampling_steps=num_sampling_steps,
                     noise_repeat=num_images_per_caption,
@@ -509,12 +523,9 @@ class NextStep11Pipeline(nn.Module):
 
             # Prepare input embeds for next LLM step
             cur_inputs_embeds = self.model.image_in_projector(tokens[:, -1:])
-            if not cfg_parallel:
-                # Non-parallel: duplicate embeds for CFG batch
-                if cfg > 1.0 and cfg_img == 1.0:
-                    cur_inputs_embeds = torch.cat([cur_inputs_embeds, cur_inputs_embeds], dim=0)
-                elif cfg > 1.0 and cfg_img != 1.0:
-                    cur_inputs_embeds = torch.cat([cur_inputs_embeds, cur_inputs_embeds, cur_inputs_embeds], dim=0)
+            if not cfg_parallel and cfg_mult > 1:
+                # Non-parallel: duplicate embeds for all active CFG branches.
+                cur_inputs_embeds = torch.cat([cur_inputs_embeds] * cfg_mult, dim=0)
             # In CFG-parallel mode, each rank already has its portion — no duplication needed
 
             attention_mask = torch.cat(
@@ -613,7 +624,7 @@ class NextStep11Pipeline(nn.Module):
         captions, images = self._check_input(prompt, None)
 
         # Build captions with CFG
-        captions, images = self._build_captions(
+        captions, images, cfg_mult, effective_cfg_img = self._build_captions(
             captions,
             images,
             num_images_per_prompt,
@@ -672,7 +683,8 @@ class NextStep11Pipeline(nn.Module):
             num_images_per_caption=num_images_per_prompt,
             use_norm=use_norm,
             cfg=guidance_scale,
-            cfg_img=cfg_img,
+            cfg_img=effective_cfg_img,
+            cfg_mult=cfg_mult,
             cfg_schedule=cfg_schedule,
             timesteps_shift=timesteps_shift,
             num_sampling_steps=num_inference_steps,
